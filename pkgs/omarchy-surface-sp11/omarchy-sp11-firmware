@@ -1,0 +1,89 @@
+#!/bin/bash
+# Install the Surface Pro 11 GPU and DSP firmware after installation, then
+# rebuild the boot image.
+#
+# The firmware is Microsoft/Qualcomm licensed and is never shipped in a
+# package. Omarchy's installer copies it from Windows before the disk is
+# wiped (qcom-firmware-extract), but that cannot read a BitLocker-encrypted
+# Windows partition. This is the fallback.
+#
+#   omarchy-sp11-firmware [--download | --windows | --from DIR | --status]
+#     --download   (default) fetch Microsoft's Surface Pro 11 driver packages
+#                  from the WOA-Project/Qualcomm-Reference-Drivers repository
+#                  and extract the firmware (sp11-grab-fw, by Dale Whinham)
+#     --windows    extract it from a BitLocker Windows partition still on the
+#                  internal disk (sp11-grab-fw --win; needs dislocker, ntfs-3g)
+#     --from DIR   copy it from a Windows driver store you saved somewhere
+#                  (Windows/System32/DriverStore/FileRepository, or any folder
+#                  holding the files), using Omarchy's qcom-firmware-extract
+#     --status     list the firmware the device tree asks for that is missing
+#
+# Afterwards the DSP driver is re-enabled if Omarchy had disabled it for
+# missing firmware, and the initramfs/UKI is rebuilt (limine-mkinitcpio).
+set -euo pipefail
+
+fw_root=${OMARCHY_SP11_FIRMWARE_ROOT:-/usr/lib/firmware}
+nofw_conf=${OMARCHY_SP11_ADSP_NOFW:-/etc/modprobe.d/qualcomm-adsp-nofw.conf}
+
+usage() { sed -n '2,/^set -euo/{/^set -euo/d;s/^# \{0,1\}//;p}' "$0"; }
+
+mode=download from_dir=""
+case ${1:-} in
+  "" | --download) mode=download ;;
+  --windows) mode=windows ;;
+  --from) mode=from; from_dir=${2:?--from needs a directory} ;;
+  --status) mode=status ;;
+  -h | --help) usage; exit 0 ;;
+  *) echo "omarchy-sp11-firmware: unknown option: $1" >&2; usage >&2; exit 2 ;;
+esac
+
+if [[ $mode == status ]]; then
+  if command -v qcom-firmware-extract >/dev/null 2>&1; then
+    missing=$(qcom-firmware-extract --list-missing || true)
+    if [[ -n $missing ]]; then
+      echo "Missing firmware:"
+      echo "$missing"
+      exit 1
+    fi
+    echo "All firmware the device tree asks for is installed."
+    exit 0
+  fi
+  echo "qcom-firmware-extract is not installed" >&2
+  exit 2
+fi
+
+if ((EUID != 0)); then
+  exec sudo "$0" "$@"
+fi
+
+case $mode in
+  download) sp11-grab-fw --download ;;
+  windows) sp11-grab-fw --win ;;
+  from) qcom-firmware-extract --install --no-rebuild -d "$from_dir" ;;
+esac
+
+# ADSP firmware present again: let the DSP driver load. Omarchy's
+# qualcomm/firmware.sh only writes this file when the firmware was missing,
+# or when the root disk is on USB; leave it alone in the USB case.
+present() { # path relative to the firmware root
+  local dir suffix
+  for dir in "$fw_root/updates" "$fw_root"; do
+    for suffix in '' .zst .xz; do
+      [[ -f $dir/$1$suffix ]] && return 0
+    done
+  done
+  return 1
+}
+if [[ -f $nofw_conf ]] && grep -q 'signed firmware' "$nofw_conf" &&
+  present qcom/x1e80100/microsoft/Denali/qcadsp8380.mbn; then
+  rm -f "$nofw_conf"
+  echo "omarchy-sp11-firmware: ADSP firmware found; re-enabled the DSP driver ($nofw_conf removed)"
+fi
+
+if command -v limine-mkinitcpio >/dev/null 2>&1; then
+  echo "omarchy-sp11-firmware: rebuilding initramfs and UKI (limine-mkinitcpio)..."
+  limine-mkinitcpio
+else
+  mkinitcpio -P
+fi
+echo "omarchy-sp11-firmware: done. Reboot to load the firmware."

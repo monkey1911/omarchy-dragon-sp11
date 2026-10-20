@@ -1,0 +1,17 @@
+# Copies linux-sp11's Surface Pro 11 device trees over linux-aarch64's in
+# /boot/dtbs/qcom and refreshes the UKI DeviceTreeAuto block. Fires for either
+# kernel package so a stock kernel update cannot put its trees back. Sorts
+# before 90-mkinitcpio-install.hook and the Limine hook.
+[Trigger]
+Operation = Install
+Operation = Upgrade
+Type = Path
+Target = usr/lib/modules/*/dtb/qcom/x1e80100-microsoft-denali-oled.dtb
+Target = usr/lib/modules/*/dtb/qcom/x1p64100-microsoft-denali.dtb
+Target = boot/dtbs/qcom/x1e80100-microsoft-denali-oled.dtb
+Target = boot/dtbs/qcom/x1p64100-microsoft-denali.dtb
+
+[Action]
+Description = Installing linux-sp11 device trees and updating UKI DeviceTreeAuto (omarchy-surface-sp11)...
+When = PostTransaction
+Exec = /usr/lib/omarchy-surface-sp11/update-uki-dtbs

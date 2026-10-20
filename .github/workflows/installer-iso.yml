@@ -1,20 +1,27 @@
 name: installer-iso
 
-# Builds the Surface Laptop 7 Omarchy installer ISO (aarch64/snapdragon) from
-# the upstream commits pinned in upstream.lock plus this repository's patches
-# (installer/iso-patches) and packages. The ISO never contains Microsoft or
-# Qualcomm firmware; the install stick gets it from the local MSI extraction
-# (tools/installer-kit/make-install-usb.sh).
+# Builds the Surface Pro 11 Omarchy installer ISO (aarch64/snapdragon) from
+# the upstream commits pinned in upstream.lock, this repository's patches
+# (installer/iso-patches) and packages (pkgs/), and the signed Surface Pro 11
+# packages from Dale Whinham's [dwhinham] repository. The ISO never contains
+# Microsoft or Qualcomm firmware.
+#
+# tools/build-iso.sh runs the same steps on your own machine.
+#
+# Adapted from omarchy-dragon-sl7's installer-iso.yml (qBitnaut, MIT).
 
 on:
   push:
     paths:
       - 'installer/**'
+      - 'pkgs/**'
+      - 'tools/**'
       - 'upstream.lock'
+      - '.github/workflows/installer-iso.yml'
   workflow_dispatch:
 
 permissions:
-  contents: read # the iso job raises this to write for the release upload
+  contents: read # the publish job raises this to write for the release upload
 
 concurrency:
   group: installer-iso-${{ github.ref }}
@@ -22,12 +29,12 @@ concurrency:
 
 env:
   # Arch Linux ARM build environment (omacom/omarchy-pkg-builder, aarch64),
-  # pinned by digest, as in linux-sl7.yml.
+  # pinned by digest. tools/build-iso.sh uses the same digest.
   BUILDER_IMAGE: ghcr.io/omacom/omarchy-pkg-builder@sha256:a0cedbe8fb2f15aa34217ddd8a74a5e12003dc442f16f1825ab2b9e023488a63
 
 jobs:
   repo:
-    name: Local package repository omarchy-sl7
+    name: Local package repository omarchy-sp11
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 120
     steps:
@@ -35,14 +42,20 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Lint installer scripts
+      - name: Lint scripts
         run: |
+          set -euo pipefail
           sudo apt-get update -qq
-          sudo apt-get install -y -qq shellcheck
-          shellcheck -x -P SCRIPTDIR -s bash -S warning installer/scripts/*.sh \
-            tools/lib/usb.sh tools/installer-kit/make-install-usb.sh tools/installer-kit/get-sl7-firmware.sh tools/recon-kit/make-recon-usb.sh \
-            tools/repo/*.sh tools/bootstrap/*.sh
-          if grep -rIn '[[:space:]]$' installer/scripts upstream.lock; then
+          sudo apt-get install -y -qq shellcheck lua5.4
+          shellcheck -x -P SCRIPTDIR -s bash -S warning installer/scripts/*.sh tools/build-iso.sh
+          cd pkgs/omarchy-surface-sp11
+          shellcheck -x -s bash -S warning -e SC2034,SC2154 \
+            sp11-firmware update-uki-dtbs set-boot-order neutralize-surface-keyboard \
+            omarchy-sp11-firmware omarchy-sp11-repo-ensure 10-omarchy-sp11-repo \
+            omarchy-surface-sp11.install zz-omarchy-surface-sp11.conf PKGBUILD ../iptsd-sp11/PKGBUILD
+          luac5.4 -p guard-pro-audio.lua
+          cd "$GITHUB_WORKSPACE"
+          if grep -rIn '[[:space:]]$' installer/scripts tools pkgs upstream.lock; then
             echo "trailing whitespace found" >&2
             exit 1
           fi
@@ -50,50 +63,8 @@ jobs:
       - name: Load upstream.lock
         run: installer/scripts/lock-env.sh >> "$GITHUB_ENV"
 
-      # The prebuilt SL7 packages (linux-sl7, iptsd-sl7, libcamera-sl7, howdy-next,
-      # sl7-ir-bridge, omarchy-sl7-faceunlock) come from the signed rolling release
-      # repo-aarch64, which publish-repo.yml keeps current and which does not
-      # expire (CI artifacts do, after 14 days). The newest version of each package
-      # is taken and its signature is checked against the key in
-      # pkgs/omarchy-sl7-keyring. omarchy-surface-sl7 and omarchy-sl7-keyring are
-      # built from this checkout below, so they are always the current source.
-      - name: Download the newest SL7 packages from the repo-aarch64 release
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          mkdir -p rel dl/release
-          gh release download repo-aarch64 -R "$GITHUB_REPOSITORY" -D rel \
-            --pattern '*.pkg.tar.zst' --pattern '*.pkg.tar.zst.sig'
-          export GNUPGHOME="$RUNNER_TEMP/gnupg"
-          mkdir -m 700 "$GNUPGHOME"
-          gpg --batch --import pkgs/omarchy-sl7-keyring/omarchy-sl7.gpg
-          declare -A best bestv
-          for f in rel/*.pkg.tar.zst; do
-            b="$(basename "$f")"
-            [[ $b =~ ^(.+)-([^-]+-[^-]+)-[^-]+\.pkg\.tar\.zst$ ]] || { echo "cannot parse $b" >&2; exit 1; }
-            n="${BASH_REMATCH[1]}"; v="${BASH_REMATCH[2]}"
-            case "$n" in omarchy-surface-sl7 | omarchy-sl7-keyring | *-debug) continue ;; esac
-            if [ -z "${best[$n]:-}" ] || [ "$(printf '%s\n%s\n' "${bestv[$n]}" "$v" | sort -V | tail -n 1)" = "$v" ]; then
-              best[$n]="$f"; bestv[$n]="$v"
-            fi
-          done
-          for n in "${!best[@]}"; do
-            f="${best[$n]}"
-            [ -f "$f.sig" ] || { echo "$f has no signature" >&2; exit 1; }
-            gpg --batch --verify "$f.sig" "$f"
-            cp "$f" dl/release/
-          done
-          # Floors, from upstream.lock: refuse to build an older stack by accident.
-          at_least() { # name floor
-            local got
-            got="${bestv[$1]:-}"
-            [ -n "$got" ] || { echo "release has no $1" >&2; exit 1; }
-            [ "$(printf '%s\n%s\n' "$2" "$got" | sort -V | tail -n 1)" = "$got" ] || { echo "$1 $got is older than $2" >&2; exit 1; }
-          }
-          at_least linux-sl7 "$SL7_MIN_LINUX_SL7"
-          at_least iptsd-sl7 "$SL7_MIN_IPTSD_SL7"
-          for n in "${!best[@]}"; do echo "$n ${bestv[$n]}"; done | sort | tee dl-versions.txt
+      - name: Fetch the signed Surface Pro 11 packages from [dwhinham]
+        run: installer/scripts/fetch-dwhinham.sh dl
 
       - name: Fetch pinned omarchy-pkgs and export its qcom-firmware-extract and linux-aarch64-pkgbase-shim PKGBUILDs
         run: |
@@ -107,8 +78,8 @@ jobs:
           mkdir -p repo
           docker run --rm --platform linux/arm64 --user 0 \
             -v "$PWD/installer/scripts:/scripts:ro" \
-            -v "$PWD/pkgs/omarchy-surface-sl7:/src/omarchy-surface-sl7:ro" \
-            -v "$PWD/pkgs/omarchy-sl7-keyring:/src/omarchy-sl7-keyring:ro" \
+            -v "$PWD/pkgs/omarchy-surface-sp11:/src/omarchy-surface-sp11:ro" \
+            -v "$PWD/pkgs/iptsd-sp11:/src/iptsd-sp11:ro" \
             -v "$RUNNER_TEMP/upstream:/src/upstream:ro" \
             -v "$PWD/dl:/prebuilt:ro" \
             -v "$PWD/repo:/repo" \
@@ -117,11 +88,22 @@ jobs:
             bash /scripts/build-repo.sh
 
       - name: Guard against firmware in the repository
-        run: pkgs/linux-sl7/scripts/guard-artifacts.sh repo
+        run: installer/scripts/guard-artifacts.sh repo
+
+      - name: Package versions
+        run: |
+          set -euo pipefail
+          {
+            cat dl/versions.txt
+            for f in repo/omarchy-surface-sp11-*.pkg.tar.zst repo/iptsd-sp11-*.pkg.tar.zst; do
+              b="$(basename "$f")"
+              [[ $b =~ ^(.+)-([^-]+-[^-]+)-[^-]+\.pkg\.tar\.zst$ ]] && echo "${BASH_REMATCH[1]} ${BASH_REMATCH[2]}"
+            done
+          } | sort | tee package-versions.txt
 
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: omarchy-sl7-repo
+          name: omarchy-sp11-repo
           path: repo/
           if-no-files-found: error
           retention-days: 14
@@ -129,7 +111,7 @@ jobs:
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: package-versions
-          path: dl-versions.txt
+          path: package-versions.txt
           if-no-files-found: error
           retention-days: 14
 
@@ -161,9 +143,6 @@ jobs:
         uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be # v1.3.1
         continue-on-error: true
 
-      - name: Disk after cleanup
-        run: df -h
-
       - name: Fetch pinned upstreams
         run: |
           set -euo pipefail
@@ -172,7 +151,7 @@ jobs:
       - name: Download the repository artifact
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          name: omarchy-sl7-repo
+          name: omarchy-sp11-repo
           path: ${{ runner.temp }}/build/repo
 
       - name: Download the package versions
@@ -186,9 +165,9 @@ jobs:
           # Artifact upload may have turned the links into copies. The extra
           # omarchy.db name is only there to satisfy omarchy-iso-make.
           cd "$RUNNER_TEMP/build/repo"
-          ln -sf omarchy-sl7.db.tar.gz omarchy-sl7.db
-          ln -sf omarchy-sl7.files.tar.gz omarchy-sl7.files
-          ln -sf omarchy-sl7.db omarchy.db
+          ln -sf omarchy-sp11.db.tar.gz omarchy-sp11.db
+          ln -sf omarchy-sp11.files.tar.gz omarchy-sp11.files
+          ln -sf omarchy-sp11.db omarchy.db
           ls -l
           cd "$GITHUB_WORKSPACE"
           installer/scripts/apply-iso-patches.sh "$RUNNER_TEMP/build/omarchy-iso"
@@ -214,7 +193,6 @@ jobs:
           installer/scripts/assert-iso.sh "${isos[0]}" "$RUNNER_TEMP/assert"
 
       - name: Checksum
-        id: sum
         run: |
           set -euo pipefail
           mkdir -p out
@@ -235,14 +213,15 @@ jobs:
             echo "| omarchy | \`$OMARCHY_SHA\` |"
             echo "| omarchy-iso | \`$OMARCHY_ISO_SHA\` |"
             echo "| omarchy-pkgs | \`$OMARCHY_PKGS_SHA\` |"
-            echo '| SL7 package (repo-aarch64) | version |'
+            echo
+            echo '| Surface Pro 11 package | version |'
             echo '|---|---|'
-            while read -r n v; do echo "| $n | $v |"; done < "$GITHUB_WORKSPACE/dl-versions.txt"
+            while read -r n v; do echo "| $n | $v |"; done < "$GITHUB_WORKSPACE/package-versions.txt"
           } >> "$GITHUB_STEP_SUMMARY"
 
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: omarchy-sl7-installer-iso
+          name: omarchy-sp11-installer-iso
           path: out/
           if-no-files-found: error
           retention-days: 14
@@ -257,8 +236,6 @@ jobs:
     needs: iso
     if: ${{ github.ref == 'refs/heads/main' }}
     runs-on: ubuntu-24.04-arm
-    # Holds the signing secrets; the environment only deploys from main.
-    environment: release
     timeout-minutes: 60
     permissions:
       contents: write # release upload and tag move (installer-latest)
@@ -266,7 +243,7 @@ jobs:
       - name: Download the ISO artifact
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          name: omarchy-sl7-installer-iso
+          name: omarchy-sp11-installer-iso
           path: out
 
       - name: Download the package versions
@@ -275,15 +252,12 @@ jobs:
           name: package-versions
 
       # GitHub release assets are limited to 2 GiB each and this ISO is larger,
-      # so the release carries it as parts of 1900 MiB (cat them back together;
-      # the README and make-install-usb.sh do). The release is edited in place on
-      # every successful main build (never deleted, so the tag can be protected
-      # against deletion) and the tag is moved to the commit that built it.
+      # so the release carries it as parts of 1900 MiB (cat them back together).
+      # The release is edited in place on every successful main build and the
+      # tag is moved to the commit that built it.
       - name: Publish the ISO to the installer-latest release
         env:
           GH_TOKEN: ${{ github.token }}
-          REPO_SIGNING_KEY: ${{ secrets.REPO_SIGNING_KEY }}
-          REPO_SIGNING_KEY_ID: ${{ secrets.REPO_SIGNING_KEY_ID }}
           TAG: installer-latest
         run: |
           set -euo pipefail
@@ -294,31 +268,15 @@ jobs:
           (cd rel && sha256sum "$iso".part-* > "$iso.parts.sha256")
           ls -l rel
           size="$(stat -c %s "out/$iso")"
-          signed="no (REPO_SIGNING_KEY not set)"
-          if [ -n "$REPO_SIGNING_KEY" ] && [ -n "$REPO_SIGNING_KEY_ID" ]; then
-            export GNUPGHOME="$RUNNER_TEMP/gnupg-sign"
-            mkdir -m 700 "$GNUPGHOME"
-            printf '%s\n' "$REPO_SIGNING_KEY" | gpg --batch --import
-            gpg --batch --yes --pinentry-mode loopback --passphrase '' -u "$REPO_SIGNING_KEY_ID" \
-              --detach-sign --output "rel/$iso.sha256.sig" "rel/$iso.sha256"
-            gpg --batch --yes --armor --export "$REPO_SIGNING_KEY_ID" > rel/omarchy-sl7.pub.asc
-            gpg --batch --verify "rel/$iso.sha256.sig" "rel/$iso.sha256"
-            signed="yes (detached signature of the .sha256 file, key $REPO_SIGNING_KEY_ID)"
-          else
-            echo "::warning title=installer-iso::REPO_SIGNING_KEY not set: the ISO checksum is published unsigned"
-          fi
-          pkgs="$(while read -r n v; do echo "- $n $v"; done < "$GITHUB_WORKSPACE/dl-versions.txt")"
+          pkgs="$(while read -r n v; do echo "- $n $v"; done < package-versions.txt)"
           cat > notes.md <<NOTES
-          Omarchy installer ISO for the Surface Laptop 7 13.8" (Snapdragon X, aarch64), rebuilt by
-          .github/workflows/installer-iso.yml on every change. This release is replaced by each build.
+          Omarchy installer ISO for the Microsoft Surface Pro 11 (Snapdragon X, aarch64), rebuilt by
+          .github/workflows/installer-iso.yml on every change to main. This release is replaced by each build.
 
           Built from commit ${GITHUB_SHA} (workflow run ${GITHUB_RUN_ID}), $(date -u +%Y-%m-%d).
 
-          **Firmware: this ISO contains NO Microsoft or Qualcomm firmware** (checked in the build by
-          installer/scripts/assert-iso.sh and the repository firmware guard). The install stick gets it
-          from your own copy of Microsoft's public Surface driver package, extracted on your machine
-          by tools/installer-kit/get-sl7-firmware.sh and written to the stick's SL7DATA partition by
-          tools/installer-kit/make-install-usb.sh.
+          **This ISO contains NO Microsoft or Qualcomm firmware.** The installer copies it from
+          Windows before the disk is wiped, or run \`sudo omarchy-sp11-firmware\` after installing.
 
           The ISO is $size bytes, over GitHub's 2 GiB asset limit, so it is published in parts.
           Reassemble and check:
@@ -326,17 +284,15 @@ jobs:
               cat ${iso}.part-* > ${iso}
               sha256sum -c ${iso}.sha256
 
-          Or let tools/installer-kit/make-install-usb.sh --from-release do it. Signed checksum: $signed.
-
-          SL7 packages on this ISO (newest signed builds from the repo-aarch64 release):
+          Surface Pro 11 packages on this ISO:
           $pkgs
           NOTES
           if ! gh release view "$TAG" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             gh release create "$TAG" -R "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --latest \
-              --title "Surface Laptop 7 installer ISO (latest)" --notes-file notes.md
+              --title "Surface Pro 11 installer ISO (latest)" --notes-file notes.md
           fi
           gh release view "$TAG" -R "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name' | sort > have.txt
-          # parts first, the checksums and signature last
+          # parts first, the checksums last
           for f in rel/*; do
             case "$f" in *.part-*) gh release upload "$TAG" -R "$GITHUB_REPOSITORY" --clobber "$f" ;; esac
           done
@@ -350,14 +306,10 @@ jobs:
             echo "delete stale asset $f"
             gh release delete-asset "$TAG" "$f" -R "$GITHUB_REPOSITORY" -y
           done
-          # point the tag at the commit that built this ISO (an update of the
-          # existing ref, not a delete and create), then the release text
           gh api -X PATCH "repos/$GITHUB_REPOSITORY/git/refs/tags/$TAG" -f sha="$GITHUB_SHA" -F force=true >/dev/null
           gh release edit "$TAG" -R "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --latest \
-            --title "Surface Laptop 7 installer ISO (latest)" --notes-file notes.md
+            --title "Surface Pro 11 installer ISO (latest)" --notes-file notes.md
           {
             echo
             echo "Release: https://github.com/$GITHUB_REPOSITORY/releases/tag/$TAG"
           } >> "$GITHUB_STEP_SUMMARY"
-
-

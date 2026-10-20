@@ -1,0 +1,78 @@
+# Adapted from omarchy-surface-sl7.install (qBitnaut/omarchy-dragon-sl7, MIT).
+_sp11_dir=/usr/lib/omarchy-surface-sp11
+_sp11_fw=/usr/lib/firmware
+
+_sp11_in_chroot() {
+  command -v systemd-detect-virt >/dev/null 2>&1 && systemd-detect-virt --quiet --chroot
+}
+
+_sp11_firmware_present() {
+  local dir suffix
+  for dir in "$_sp11_fw/updates" "$_sp11_fw"; do
+    for suffix in '' .zst .xz; do
+      [[ -f $dir/qcom/x1e80100/microsoft/qcdxkmsuc8380.mbn$suffix ]] && return 0
+    done
+  done
+  return 1
+}
+
+_sp11_rebuild() {
+  if [[ -n ${OMARCHY_SP11_SKIP_REBUILD:-} ]]; then
+    echo "omarchy-surface-sp11: OMARCHY_SP11_SKIP_REBUILD set; not rebuilding the initramfs/UKI."
+    return 0
+  fi
+  # Image builds (pacstrap, the installer) run scriptlets in a chroot where the
+  # installer creates the boot image itself later.
+  if _sp11_in_chroot; then
+    echo "omarchy-surface-sp11: chroot detected; skipping the initramfs/UKI rebuild."
+    return 0
+  fi
+  if command -v limine-mkinitcpio >/dev/null 2>&1; then
+    echo "omarchy-surface-sp11: rebuilding initramfs and UKI (limine-mkinitcpio)..."
+    limine-mkinitcpio || echo "omarchy-surface-sp11: limine-mkinitcpio failed; run it manually." >&2
+  elif command -v mkinitcpio >/dev/null 2>&1; then
+    mkinitcpio -P || echo "omarchy-surface-sp11: mkinitcpio failed; run it manually." >&2
+  fi
+}
+
+# Keep [dwhinham] Included in /etc/pacman.conf (only once its key is trusted)
+# and give existing users the `omarchy refresh pacman` hook. Skipped in a
+# chroot: the installer's offline pacman.conf is replaced afterwards, and the
+# boot service (omarchy-sp11-repo.service) applies the online configuration.
+_sp11_repo() {
+  _sp11_in_chroot && return 0
+  /usr/bin/omarchy-sp11-repo-ensure --hook --provision-users || true
+}
+
+_sp11_setup() {
+  _sp11_repo
+  "$_sp11_dir/neutralize-surface-keyboard" || true
+  "$_sp11_dir/update-uki-dtbs" || true
+  "$_sp11_dir/set-boot-order" || true
+
+  if [[ -f /etc/default/limine ]] && grep -Eq '^[[:space:]]*ENABLE_UKI="?no' /etc/default/limine; then
+    echo "omarchy-surface-sp11: WARNING: /etc/default/limine sets ENABLE_UKI=no."
+    echo "  Without a UKI the boot entry has no device tree and the Surface Pro 11 will not boot."
+  fi
+
+  if ! _sp11_firmware_present; then
+    echo "omarchy-surface-sp11: the Surface Pro 11 GPU/DSP firmware is not installed."
+    echo "  It is Microsoft/Qualcomm licensed and cannot ship in a package. Once online, run:"
+    echo "    sudo omarchy-sp11-firmware"
+    echo "  then reboot."
+  fi
+
+  _sp11_rebuild
+}
+
+post_install() {
+  _sp11_setup
+}
+
+post_upgrade() {
+  _sp11_setup
+}
+
+post_remove() {
+  echo "omarchy-surface-sp11: removed. Rebuild the initramfs/UKI (limine-mkinitcpio) so the Surface Pro 11 modules are dropped."
+}

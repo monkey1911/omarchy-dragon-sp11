@@ -1,9 +1,0 @@
-[Desktop Entry]
-Type=Application
-Name=SL7 IR Lab
-Comment=Live IR camera view (Surface Laptop 7)
-Exec=sl7-ir-lab
-Icon=camera-photo
-Terminal=false
-Categories=Utility;
-Keywords=IR;camera;Surface;SL7;

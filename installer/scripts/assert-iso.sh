@@ -1,12 +1,15 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: MIT
 # Assertions on a freshly built installer ISO (CI, and runnable locally).
-#   - the live UKI omarchy-live.efi and the linux-sl7 kernel/initramfs are in the ISO
-#   - the live root carries linux-sl7 modules and our drop-ins, and no other kernel
-#   - the offline mirror holds every package the Surface Laptop 7 profile installs
-#   - no Microsoft firmware anywhere: no qcom/<soc>/microsoft/ or .../Romulus/
+#   - the live UKI omarchy-live.efi and the linux-sp11 kernel/initramfs are in the ISO
+#   - the live root carries linux-sp11 modules, its denali device trees and our
+#     drop-ins, and no other kernel
+#   - the offline mirror holds every package the Surface Pro 11 profile installs
+#   - no Microsoft firmware anywhere: no qcom/<soc>/microsoft/ or .../Denali/
 #     path in the ISO tree, the live root, or any package of the offline mirror
-#     (linux-firmware's own qcom/x1e80100/X1E80100-Romulus-tplg.bin is fine)
+#     (the AudioReach topology qcom/x1e80100/X1E80100-Microsoft-Surface-Pro-11-tplg.bin
+#     is an open file and is fine)
+# Adapted from omarchy-dragon-sl7 (qBitnaut, MIT).
 #
 # usage: assert-iso.sh ISO [WORKDIR]
 #   needs xorriso, squashfs-tools (unsquashfs) and libarchive-tools (bsdtar);
@@ -30,8 +33,8 @@ else
 fi
 
 # Case-insensitive; matches a vendor directory named microsoft under qcom/, or a
-# Romulus directory. Does not match X1E80100-Romulus-tplg.bin (a file name).
-forbidden='qcom/[^/]+/microsoft(/|$)|qcom/.*/microsoft/|/romulus/'
+# Denali/Romulus directory. Does not match a *-tplg.bin file name.
+forbidden='qcom/[^/]+/microsoft(/|$)|qcom/.*/microsoft/|/(denali|romulus)/'
 fail=0
 bad() {
 	echo "FAIL: $*" >&2
@@ -42,8 +45,8 @@ bad() {
 info "ISO tree"
 xorriso -indev "$iso" -find / -type f >"$work/iso-files.txt" 2>"$work/xorriso.log" ||
 	{ tail -n 20 "$work/xorriso.log" >&2; die "xorriso could not read $iso"; }
-for f in /arch/boot/aarch64/omarchy-live.efi /arch/boot/aarch64/vmlinuz-linux-sl7 \
-	/arch/boot/aarch64/initramfs-linux-sl7.img /arch/aarch64/airootfs.sfs; do
+for f in /arch/boot/aarch64/omarchy-live.efi /arch/boot/aarch64/vmlinuz-linux-sp11 \
+	/arch/boot/aarch64/initramfs-linux-sp11.img /arch/aarch64/airootfs.sfs; do
 	grep -Fxq "'$f'" "$work/iso-files.txt" || bad "ISO has no $f"
 done
 if grep -Fq "vmlinuz-linux-aarch64'" "$work/iso-files.txt"; then
@@ -63,17 +66,16 @@ if grep -Eiq "$forbidden" "$work/sfs-files.txt"; then
 	grep -Ei "$forbidden" "$work/sfs-files.txt" >&2
 	bad "Microsoft firmware path in the live root"
 fi
-for f in etc/mkinitcpio.conf.d/zzz-sl7-live.conf usr/local/bin/omarchy-sl7-firmware-stage \
-	etc/systemd/system/sl7-firmware-stage.service \
-	etc/systemd/system/multi-user.target.wants/sl7-firmware-stage.service \
-	usr/share/omarchy-iso/platforms.json; do
+for f in etc/mkinitcpio.conf.d/zzz-sp11-live.conf usr/share/omarchy-iso/platforms.json; do
 	grep -Fxq "squashfs-root/$f" "$work/sfs-files.txt" || bad "live root has no /$f"
 done
 grep -Fxq 'squashfs-root/etc/vconsole.conf' "$work/sfs-files.txt" || bad "live root has no /etc/vconsole.conf"
-grep -Eq '^squashfs-root/usr/lib/modules/[^/]*sl7[^/]*/vmlinuz$' "$work/sfs-files.txt" ||
-	bad "live root has no linux-sl7 kernel under /usr/lib/modules"
-if grep -E '^squashfs-root/usr/lib/modules/[^/]+/vmlinuz$' "$work/sfs-files.txt" | grep -v sl7; then
-	bad "live root carries another kernel besides linux-sl7"
+grep -Eq '^squashfs-root/usr/lib/modules/[^/]*sp11[^/]*/vmlinuz$' "$work/sfs-files.txt" ||
+	bad "live root has no linux-sp11 kernel under /usr/lib/modules"
+grep -Eq '^squashfs-root/usr/lib/modules/[^/]*sp11[^/]*/dtb/qcom/x1e80100-microsoft-denali-oled\.dtb$' "$work/sfs-files.txt" ||
+	bad "live root has no linux-sp11 denali device tree (linux-sp11-dtbs)"
+if grep -E '^squashfs-root/usr/lib/modules/[^/]+/vmlinuz$' "$work/sfs-files.txt" | grep -v sp11; then
+	bad "live root carries another kernel besides linux-sp11"
 fi
 
 # --- offline mirror ---------------------------------------------------------
@@ -82,7 +84,8 @@ mirror="var/cache/omarchy/mirror/offline"
 unsquashfs -no-progress -d "$work/mirror" "$work/airootfs.sfs" "$mirror" >"$work/unsquashfs.log" 2>&1 ||
 	{ tail -n 20 "$work/unsquashfs.log" >&2; die "could not extract the offline mirror"; }
 mdir="$work/mirror/$mirror"
-for p in linux-sl7 linux-sl7-headers omarchy-surface-sl7 omarchy-sl7-keyring iptsd-sl7 omarchy-sl7-battery linux-firmware-qcom \
+for p in linux-sp11 linux-sp11-dtbs dwhinham-keyring omarchy-surface-sp11 iptsd-sp11 sp11-ath12k-board \
+	sp11-audioreach-topology alsa-ucm-conf-sp11 sp11-grab-fw sp11-mac-fixup linux-firmware-qcom \
 	qcom-firmware-extract linux-aarch64-pkgbase-shim; do
 	found="$(find "$mdir" -maxdepth 1 -name "$p-[0-9]*.pkg.tar.*" ! -name '*.sig')"
 	[ -n "$found" ] || bad "offline mirror has no $p"

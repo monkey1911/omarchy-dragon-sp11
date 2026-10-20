@@ -1,0 +1,11 @@
+[Unit]
+Description=Keep the [dwhinham] pacman repository configured (omarchy-surface-sp11)
+ConditionPathExists=!/etc/pacman.d/omarchy-sp11.disabled
+After=local-fs.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/omarchy-sp11-repo-ensure --hook --provision-users
+
+[Install]
+WantedBy=multi-user.target
