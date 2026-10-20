@@ -1,0 +1,76 @@
+# Maintainer: Kara Monk <https://github.com/monkey1911>
+#
+# Upstream iptsd (linux-surface/iptsd) built for Arch Linux ARM, for the
+# Surface Pro 11 touchscreen and pen. The Surface Pro 11 archiso project
+# (dwhinham/archlinux-repo) ships the same upstream release; this package is
+# rebuilt against Arch Linux ARM's libraries because the installed system is
+# Arch Linux ARM, not Arch Linux Ports. It is named iptsd-sp11 so that pacman
+# never swaps it for the [dwhinham] build.
+#
+# Build flags follow iptsd-sl7 from qBitnaut/omarchy-dragon-sl7 (MIT).
+
+pkgname=iptsd-sp11
+_pkgname=iptsd
+pkgver=3.1.0
+pkgrel=1
+pkgdesc='Userspace touch and pen daemon for Surface devices, built for the Surface Pro 11 on Arch Linux ARM'
+arch=('aarch64')
+url='https://github.com/linux-surface/iptsd'
+license=('GPL-2.0-or-later')
+depends=('fmt' 'libinih' 'spdlog' 'systemd-libs')
+# Header-only libraries (cli11, eigen, microsoft-gsl) are build-time only.
+# cmake is required: meson locates Microsoft.GSL through its CMake config.
+makedepends=('meson' 'ninja' 'cmake' 'cli11' 'eigen' 'microsoft-gsl' 'systemd')
+checkdepends=('binutils')
+provides=("$_pkgname=$pkgver")
+conflicts=("$_pkgname")
+backup=('etc/iptsd.conf')
+options=('!lto')  # LTO is handled by meson (b_lto), not makepkg's flag injection
+# Same release tarball as dwhinham/archlinux-repo's iptsd 3.1.0-1.
+source=("$_pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
+sha256sums=('af0aab95387a5107dfa8ac1ef90a29289f6b9d06e1a59121c9e5e732b27a266c')
+
+_bp='-mbranch-protection=standard'
+
+build() {
+  # BTI/PAC consistency (linux-surface/iptsd#1590): a binary whose property
+  # note disagrees with its code dies with SIGILL even on --help. With LTO the
+  # final code generation happens at link time, so LDFLAGS carries it too.
+  local v
+  for v in CFLAGS CXXFLAGS LDFLAGS; do
+    case "${!v}" in
+      *-mbranch-protection=*) ;;
+      *) export "$v=${!v} $_bp" ;;
+    esac
+  done
+
+  # System libraries only (nofallback): no vendored static copies. The plot
+  # and show debug tools would pull in cairomm and SDL2; leave them out.
+  arch-meson "$_pkgname-$pkgver" build \
+    --wrap-mode=nofallback \
+    -Dwerror=false \
+    -Ddebug_tools=calibrate,dump
+  meson compile -C build
+}
+
+check() {
+  # Fail only on a MIXED BTI/PAC result across the installed binaries.
+  local f note have_bti=0 no_bti=0 have_pac=0 no_pac=0
+  for f in build/src/iptsd*; do
+    [[ -f $f && -x $f ]] || continue
+    note=$(readelf -n "$f" | grep 'AArch64 feature:' || true)
+    echo "note $f: ${note:-<none>}"
+    if [[ $note == *BTI* ]]; then have_bti=$((have_bti + 1)); else no_bti=$((no_bti + 1)); fi
+    if [[ $note == *PAC* ]]; then have_pac=$((have_pac + 1)); else no_pac=$((no_pac + 1)); fi
+  done
+  if ((have_bti && no_bti)) || ((have_pac && no_pac)); then
+    echo "mixed BTI/PAC property across binaries: flags problem" >&2
+    return 1
+  fi
+}
+
+package() {
+  meson install -C build --destdir "$pkgdir"
+  install -Dm644 "$_pkgname-$pkgver/LICENSE" \
+    "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+}

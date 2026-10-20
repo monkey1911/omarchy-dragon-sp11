@@ -1,4 +1,4 @@
-# Pinned inputs of the installer ISO pipeline (.github/workflows/installer-iso.yml).
+# Pinned inputs of the Surface Pro 11 installer ISO pipeline (.github/workflows/installer-iso.yml).
 # Shell-sourceable KEY=VALUE, no spaces. Everything the ISO is built from is
 # named here; change it deliberately and re-verify installer/iso-patches
 # (installer/scripts/apply-iso-patches.sh --check) against the new SHAs.
@@ -23,14 +23,20 @@ OMARCHY_PKGS_SHA=39ed2398ab217dbdad40aeea1824c9f8dc261410
 # archinstall pinned to the release omarchy-iso's orchestrator is written and
 # tested against (archinstall_adapter.py: "Tested against archinstall 4.4").
 # ALARM extra ships 4.5, which dropped Installer.sanity_check(offline=) and
-# renamed more API. Arch's archive copy (arch=any) goes into [omarchy-sl7].
+# renamed more API. Arch's archive copy (arch=any) goes into [omarchy-sp11].
 ARCHINSTALL_VERSION=4.4-1
 ARCHINSTALL_SHA256=6cb5da75c108ef2f5d25a7a20baf6c52cc927d5e06890dd10182e6eb4be815cb
 
-# The prebuilt SL7 packages (linux-sl7, iptsd-sl7, libcamera-sl7, howdy-next,
-# sl7-ir-bridge, omarchy-sl7-faceunlock) are not pinned: the installer-iso workflow
-# takes the newest signed version of each from the repo-aarch64 release, which does
-# not expire. These floors only stop it from building an older stack by mistake.
-# linux-sl7 7.2.9-25: 7.2.9 stable, 30 fps front camera; iptsd-sl7 17: Windows-style palm handling.
-SL7_MIN_LINUX_SL7=7.2.9-25
-SL7_MIN_IPTSD_SL7=3.1.0.r20260717-17
+# Surface Pro 11 packages from Dale Whinham's repository
+# (github.com/dwhinham/archlinux-repo, release "aarch64"). The kernel and the
+# arch=any support packages are taken as published: the newest version of each
+# listed package, with its detached signature checked against DWHINHAM_KEY_FPR
+# (installer/scripts/fetch-dwhinham.sh). The floor stops a build from picking
+# up an older kernel by mistake.
+DWHINHAM_REPO_URL=https://github.com/dwhinham/archlinux-repo/releases/download/aarch64
+DWHINHAM_REPO_NAME=dwhinham
+DWHINHAM_KEY_FPR=1565514CFA0B8E619ABB379861CC72A6A05CD688
+# dwhinham/archlinux-repo commit that holds the public key (dwhinham-keyring/dwhinham.gpg).
+DWHINHAM_KEYRING_REPO=https://github.com/dwhinham/archlinux-repo.git
+DWHINHAM_KEYRING_SHA=a866dc19dc9c0bc4824bf73c9c83892d97db4761
+SP11_MIN_LINUX_SP11=7.2.11.arch1-1

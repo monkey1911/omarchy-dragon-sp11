@@ -1,0 +1,48 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Kara Monk <monkey1911@users.noreply.github.com>
+Date: Mon, 19 Oct 2026 17:42:04 -0700
+Subject: [PATCH] platforms.json: add the Microsoft Surface Pro 11
+
+Exact DMI match on "Microsoft Surface Pro, 11th Edition" (confirmed against
+systemd's hardware-ID table for x1e80100-microsoft-denali, HardwareID-9) and the
+5G variant name used by alsa-ucm-conf. The installer installs linux-sp11 next to
+the stock linux-aarch64 rescue kernel; the packages come from the local
+[omarchy-sp11] repository, linux-firmware-qcom from ALARM.
+---
+ configs/aarch64/platforms.json | 23 +++++++++++++++++++++++
+ 1 file changed, 23 insertions(+)
+
+diff --git a/configs/aarch64/platforms.json b/configs/aarch64/platforms.json
+index 0c903a5..b9a5919 100644
+--- a/configs/aarch64/platforms.json
++++ b/configs/aarch64/platforms.json
+@@ -11,6 +11,29 @@
+       "packages": ["linux-firmware-qcom"],
+       "kernel_cmdline": []
+     },
++    {
++      "id": "microsoft-surface-pro-11",
++      "name": "Microsoft Surface Pro 11",
++      "media_target": "aarch64/snapdragon",
++      "match": [
++        { "sys_vendor": "Microsoft Corporation", "product_name": "Microsoft Surface Pro, 11th Edition" },
++        { "sys_vendor": "Microsoft Corporation", "product_name": "Microsoft Surface Pro with 5G, 11th Edition" }
++      ],
++      "packages": [
++        "linux-sp11",
++        "linux-sp11-dtbs",
++        "dwhinham-keyring",
++        "omarchy-surface-sp11",
++        "iptsd-sp11",
++        "sp11-ath12k-board",
++        "sp11-audioreach-topology",
++        "alsa-ucm-conf-sp11",
++        "sp11-grab-fw",
++        "sp11-mac-fixup",
++        "linux-firmware-qcom"
++      ],
++      "kernel_cmdline": []
++    },
+     {
+       "id": "nvidia-dgx-spark",
+       "name": "NVIDIA DGX Spark",

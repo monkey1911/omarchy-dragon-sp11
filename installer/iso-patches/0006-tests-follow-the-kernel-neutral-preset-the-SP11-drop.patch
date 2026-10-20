@@ -1,0 +1,83 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Kara Monk <monkey1911@users.noreply.github.com>
+Date: Mon, 19 Oct 2026 17:43:31 -0700
+Subject: [PATCH] tests: follow the kernel-neutral preset, the SP11 drop-in and
+ [omarchy-sp11]
+
+aarch64-initramfs-test.sh looked for the literal linux-aarch64 preset
+here-document and test_local_repo_config.py expected the local repository to
+replace [omarchy]. Both now describe the patched behaviour.
+
+Adapted from omarchy-dragon-sl7 (qBitnaut, MIT).
+---
+ test/unit/aarch64-initramfs-test.sh | 19 ++++++++++++++++---
+ test/unit/test_local_repo_config.py | 10 ++++++----
+ 2 files changed, 22 insertions(+), 7 deletions(-)
+
+diff --git a/test/unit/aarch64-initramfs-test.sh b/test/unit/aarch64-initramfs-test.sh
+index e516cdb..c0f6923 100644
+--- a/test/unit/aarch64-initramfs-test.sh
++++ b/test/unit/aarch64-initramfs-test.sh
+@@ -3,15 +3,24 @@
+ set -euo pipefail
+ 
+ ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)
+-preset=$(awk '
+-  /^cat > \/etc\/mkinitcpio.d\/linux-aarch64.preset <</ { inside = 1; next }
++preset_body=$(awk '
++  /^cat > "\/etc\/mkinitcpio.d\/\$iso_kernel.preset" <</ { inside = 1; next }
+   inside && /^PRESET$/ { exit }
+   inside { print }
+ ' "$ROOT/configs/aarch64/customize_airootfs.sh")
+-[[ -n $preset ]]
++[[ -n $preset_body ]]
++# The script expands $iso_kernel inside the here-document; model generic media.
++preset=$(iso_kernel=linux-aarch64; eval "cat <<PRESET
++$preset_body
++PRESET")
+ eval "$preset"
+ [[ ${PRESETS[*]} == archiso ]]
+ [[ $archiso_image == /boot/initramfs-linux-aarch64.img ]]
++# Surface Pro 11 media boots linux-sp11.
++sp11_preset=$(iso_kernel=linux-sp11; eval "cat <<PRESET
++$preset_body
++PRESET")
++(eval "$sp11_preset"; [[ $ALL_kver == /boot/vmlinuz-linux-sp11 && $archiso_image == /boot/initramfs-linux-sp11.img ]])
+ # A preset-specific config makes mkinitcpio skip all drop-ins.
+ [[ ! -v ALL_config && ! -v archiso_config ]]
+ 
+@@ -27,4 +36,8 @@ for hook in microcode memdisk encrypt; do
+   [[ " ${HOOKS[*]} " != *" $hook "* ]]
+ done
+ [[ ${MODULES[*]} == i2c_hid_of ]]
++# The SP11 live drop-in sorts after the aarch64 one and appends the SAM modules.
++[[ zz-aarch64-live.conf < zzz-sp11-live.conf ]]
++source "$ROOT/configs/aarch64/zzz-sp11-live.conf"
++[[ " ${MODULES[*]} " == *" surface_aggregator? "* && " ${MODULES[*]} " == *" i2c_hid_of "* ]]
+ echo "ok - aarch64 live preset preserves drop-ins and excludes x86 and installed-root hooks"
+diff --git a/test/unit/test_local_repo_config.py b/test/unit/test_local_repo_config.py
+index 642ceaf..5bd1b9f 100644
+--- a/test/unit/test_local_repo_config.py
++++ b/test/unit/test_local_repo_config.py
+@@ -22,15 +22,17 @@ class LocalRepoConfigTest(unittest.TestCase):
+                 original_sections = re.findall(
+                     r"^\[([^]]+)\]$", original, re.MULTILINE
+                 )
+-                self.assertEqual(sections[:2], ["options", "omarchy"])
++                # The local repository is [omarchy-sp11], first; the published
++                # [omarchy] stays where it was.
++                self.assertEqual(sections[:2], ["options", "omarchy-sp11"])
+                 self.assertEqual(sections.count("omarchy"), 1)
+                 self.assertEqual(
+                     sections[2:],
+-                    [name for name in original_sections if name not in ("options", "omarchy")],
++                    [name for name in original_sections if name != "options"],
+                 )
+                 self.assertIn("Server = file:///omarchy-repo", result)
+-                self.assertNotIn("https://pkgs.omarchy.org/", result)
+-                self.assertEqual(result.split("[omarchy]")[0], original.split("[omarchy]")[0])
++                self.assertIn("https://pkgs.omarchy.org/", result)
++                self.assertEqual(result.split("[omarchy-sp11]")[0], original.split("[omarchy]")[0])
+                 self.assertIn("SigLevel    = Required DatabaseOptional", result)
+                 with tempfile.TemporaryDirectory() as directory:
+                     configured = Path(directory) / "pacman.conf"

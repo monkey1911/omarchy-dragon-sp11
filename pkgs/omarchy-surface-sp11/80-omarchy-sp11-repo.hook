@@ -1,0 +1,18 @@
+# omarchy / omarchy-settings (or pacman itself) can ship or rewrite /etc/pacman.conf.
+# Re-insert the Include of /etc/pacman.d/omarchy-sp11-dwhinham.conf afterwards,
+# and enable it once dwhinham-keyring has made the key trusted.
+[Trigger]
+Operation = Install
+Operation = Upgrade
+Type = Package
+Target = omarchy
+Target = omarchy-dev
+Target = omarchy-settings
+Target = omarchy-settings-dev
+Target = pacman
+Target = dwhinham-keyring
+
+[Action]
+Description = Keeping the [dwhinham] repository in /etc/pacman.conf (omarchy-surface-sp11)...
+When = PostTransaction
+Exec = /usr/bin/omarchy-sp11-repo-ensure --hook

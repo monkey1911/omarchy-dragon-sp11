@@ -1,0 +1,128 @@
+# Maintainer: Kara Monk <https://github.com/monkey1911>
+#
+# Omarchy add-on for the Microsoft Surface Pro 11 (Snapdragon X, denali).
+# Pure files, hooks and drop-ins: it works installed by pacman (pacstrap or
+# later) and needs no change to Omarchy itself.
+#
+# Structure and several files adapted from omarchy-surface-sl7
+# (qBitnaut/omarchy-dragon-sl7, MIT). The kernel and Surface Pro 11 support
+# packages it depends on come from Dale Whinham's repository
+# (dwhinham/archlinux-repo, dwhinham/archiso-aarch64-sp11).
+
+pkgname=omarchy-surface-sp11
+pkgver=0.1.0
+pkgrel=1
+pkgdesc='Omarchy add-on for the Microsoft Surface Pro 11 (Snapdragon X): initramfs, UKI device trees, kernel repository, firmware helper'
+arch=('any')
+url='https://github.com/monkey1911/omarchy-dragon-sp11'
+license=('MIT')
+groups=('omarchy-platform-qualcomm')
+depends=('omarchy' 'linux-sp11' 'linux-sp11-dtbs' 'dwhinham-keyring' 'iptsd-sp11'
+         'linux-firmware-qcom' 'linux-firmware-atheros' 'qcom-firmware-extract' 'sp11-grab-fw'
+         'mkinitcpio' 'systemd' 'bash' 'gawk' 'grep' 'coreutils' 'dmidecode')
+optdepends=('limine-mkinitcpio-hook: rebuilds the UKI and Limine entries (Omarchy default)'
+            'dislocker: omarchy-sp11-firmware --windows on a BitLocker partition'
+            'ntfs-3g: omarchy-sp11-firmware --windows')
+backup=('etc/mkinitcpio.conf.d/zz-omarchy-surface-sp11.conf'
+        'etc/limine-entry-tool.d/omarchy-surface-sp11.conf'
+        'etc/pacman.d/omarchy-sp11-dwhinham.conf')
+install=omarchy-surface-sp11.install
+
+source=('zz-omarchy-surface-sp11.conf'
+        'sp11-firmware'
+        'omarchy-surface-sp11.limine.conf'
+        '70-omarchy-surface-sp11-keyboard.hook'
+        'neutralize-surface-keyboard'
+        'omarchy-surface-sp11-neutralize.service'
+        '85-omarchy-surface-sp11-dtbs.hook'
+        'update-uki-dtbs'
+        'set-boot-order'
+        'modprobe.conf'
+        '50-omarchy-surface-sp11-wireplumber.conf'
+        'guard-pro-audio.lua'
+        'omarchy-sp11-firmware'
+        'omarchy-sp11-dwhinham.conf'
+        'omarchy-sp11-repo-ensure'
+        '80-omarchy-sp11-repo.hook'
+        'omarchy-sp11-repo.service'
+        '10-omarchy-sp11-repo'
+        'README.md'
+        'LICENSE')
+sha256sums=('SKIP'
+            'SKIP'
+            'SKIP'
+            'SKIP'
+            'SKIP'
+            'SKIP'
+            'SKIP'
+            'SKIP'
+            'SKIP'
+            'SKIP'
+            'SKIP'
+            'SKIP'
+            'SKIP'
+            'SKIP'
+            'SKIP'
+            'SKIP'
+            'SKIP'
+            'SKIP'
+            'SKIP'
+            'SKIP')
+
+package() {
+  local lib="$pkgdir/usr/lib/omarchy-surface-sp11"
+  local sys="$pkgdir/usr/lib/systemd/system"
+
+  # 1. initramfs: modules (Flex Keyboard, display) + firmware hook
+  install -Dm644 zz-omarchy-surface-sp11.conf \
+    "$pkgdir/etc/mkinitcpio.conf.d/zz-omarchy-surface-sp11.conf"
+  install -Dm644 sp11-firmware "$pkgdir/usr/lib/initcpio/install/sp11-firmware"
+
+  # 2. move Omarchy's x86 Surface keyboard module list aside, at install time
+  #    (pacman hook) and at boot (omarchy apply hardware may regenerate it)
+  install -Dm755 neutralize-surface-keyboard "$lib/neutralize-surface-keyboard"
+  install -Dm644 70-omarchy-surface-sp11-keyboard.hook \
+    "$pkgdir/usr/share/libalpm/hooks/70-omarchy-surface-sp11-keyboard.hook"
+  install -Dm644 omarchy-surface-sp11-neutralize.service \
+    "$sys/omarchy-surface-sp11-neutralize.service"
+  install -dm755 "$sys/multi-user.target.wants"
+  ln -s ../omarchy-surface-sp11-neutralize.service \
+    "$sys/multi-user.target.wants/omarchy-surface-sp11-neutralize.service"
+
+  # 3. kernel command line, UKI, device trees, boot order
+  install -Dm644 omarchy-surface-sp11.limine.conf \
+    "$pkgdir/etc/limine-entry-tool.d/omarchy-surface-sp11.conf"
+  install -Dm755 update-uki-dtbs "$lib/update-uki-dtbs"
+  install -Dm755 set-boot-order "$lib/set-boot-order"
+  install -Dm644 85-omarchy-surface-sp11-dtbs.hook \
+    "$pkgdir/usr/share/libalpm/hooks/85-omarchy-surface-sp11-dtbs.hook"
+
+  # 4. battery: the Surface (SAM) driver instead of qcom_battmgr
+  install -Dm644 modprobe.conf "$pkgdir/usr/lib/modprobe.d/omarchy-surface-sp11.conf"
+
+  # 5. audio safety: no Pro Audio on the speaker card
+  install -Dm644 50-omarchy-surface-sp11-wireplumber.conf \
+    "$pkgdir/usr/share/wireplumber/wireplumber.conf.d/50-omarchy-surface-sp11.conf"
+  install -Dm644 guard-pro-audio.lua \
+    "$pkgdir/usr/share/wireplumber/scripts/omarchy-surface-sp11/guard-pro-audio.lua"
+
+  # 6. firmware helper (no firmware in this package)
+  install -Dm755 omarchy-sp11-firmware "$pkgdir/usr/bin/omarchy-sp11-firmware"
+
+  # 7. [dwhinham] repository for linux-sp11 updates: snippet, the script that
+  #    keeps it Included, its pacman hook, boot service and `omarchy refresh
+  #    pacman` hook (Omarchy reads hooks only from ~/.config/omarchy/hooks)
+  install -Dm644 omarchy-sp11-dwhinham.conf "$pkgdir/etc/pacman.d/omarchy-sp11-dwhinham.conf"
+  install -Dm755 omarchy-sp11-repo-ensure "$pkgdir/usr/bin/omarchy-sp11-repo-ensure"
+  install -Dm644 80-omarchy-sp11-repo.hook \
+    "$pkgdir/usr/share/libalpm/hooks/80-omarchy-sp11-repo.hook"
+  install -Dm644 omarchy-sp11-repo.service "$sys/omarchy-sp11-repo.service"
+  ln -s ../omarchy-sp11-repo.service "$sys/multi-user.target.wants/omarchy-sp11-repo.service"
+  install -Dm755 10-omarchy-sp11-repo \
+    "$pkgdir/usr/share/$pkgname/pre-refresh-pacman.d/10-omarchy-sp11-repo"
+  install -Dm755 10-omarchy-sp11-repo \
+    "$pkgdir/etc/skel/.config/omarchy/hooks/pre-refresh-pacman.d/10-omarchy-sp11-repo"
+
+  install -Dm644 README.md "$pkgdir/usr/share/doc/$pkgname/README.md"
+  install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+}

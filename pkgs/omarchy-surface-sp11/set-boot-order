@@ -1,0 +1,22 @@
+#!/bin/bash
+# Put linux-sp11 first in BOOT_ORDER of /etc/default/limine, keeping every
+# other entry (linux-aarch64 stays as a later, rescue entry). /etc/default/limine
+# is read after limine-entry-tool.d drop-ins, so a drop-in cannot do this.
+# Idempotent. Does nothing if the file does not exist yet.
+# Adapted from omarchy-surface-sl7 (qBitnaut/omarchy-dragon-sl7, MIT).
+set -euo pipefail
+
+conf=${OMARCHY_SP11_LIMINE_DEFAULT:-/etc/default/limine}
+[[ -f $conf ]] || exit 0
+
+if grep -Eq '^[[:space:]]*BOOT_ORDER="?linux-sp11([ ,"]|$)' "$conf"; then
+  exit 0
+fi
+
+if grep -Eq '^[[:space:]]*BOOT_ORDER="' "$conf"; then
+  sed -i -E '0,/^[[:space:]]*BOOT_ORDER="/s//BOOT_ORDER="linux-sp11, /' "$conf"
+else
+  sed -i -E '/^[[:space:]]*BOOT_ORDER=/d' "$conf"
+  printf 'BOOT_ORDER="linux-sp11, *, *fallback, Snapshots"\n' >>"$conf"
+fi
+echo "omarchy-surface-sp11: linux-sp11 first in BOOT_ORDER ($conf)"

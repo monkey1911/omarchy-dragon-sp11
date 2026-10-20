@@ -1,24 +1,27 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: MIT
 # Run INSIDE the Arch Linux ARM builder container, as root.
-# Builds the packages that are not downloaded as CI artifacts, adds the
-# prebuilt linux-sl7 and iptsd-sl7 packages, and creates the local pacman
-# repository "omarchy-sl7" that omarchy-iso mounts with --local-repo.
+# Builds this repository's packages (omarchy-surface-sp11, iptsd-sp11) and two
+# omarchy-pkgs PKGBUILDs, adds the signed Surface Pro 11 packages downloaded
+# from [dwhinham] (fetch-dwhinham.sh), and creates the local pacman repository
+# "omarchy-sp11" that omarchy-iso mounts with --local-repo.
 #
 # Environment (all mounts read-only except /repo):
-#   SL7_PREBUILT  directory holding the downloaded *.pkg.tar.* (default /prebuilt)
-#   SL7_SOURCES   directories to build, one PKGBUILD directory each, in
-#                 sub-directories (default /src: /src/omarchy-surface-sl7,
-#                 /src/omarchy-sl7-keyring, /src/upstream/qcom-firmware-extract, /src/upstream/linux-aarch64-pkgbase-shim)
+#   SP11_PREBUILT directory holding the downloaded *.pkg.tar.* (default /prebuilt)
+#   SP11_SOURCES  directories to build, one PKGBUILD directory each, in
+#                 sub-directories (default /src: /src/omarchy-surface-sp11,
+#                 /src/iptsd-sp11, /src/upstream/qcom-firmware-extract, /src/upstream/linux-aarch64-pkgbase-shim)
 #   ARCHINSTALL_VERSION, ARCHINSTALL_SHA256  pinned archinstall (upstream.lock)
-#   SL7_REPO      output repository directory (default /repo)
+#   SP11_REPO     output repository directory (default /repo)
 set -euo pipefail
 
-prebuilt="${SL7_PREBUILT:-/prebuilt}"
-src="${SL7_SOURCES:-/src}"
-repo="${SL7_REPO:-/repo}"
+prebuilt="${SP11_PREBUILT:-/prebuilt}"
+src="${SP11_SOURCES:-/src}"
+repo="${SP11_REPO:-/repo}"
 work=/build
-expected=(linux-sl7 linux-sl7-headers iptsd-sl7 omarchy-surface-sl7 omarchy-sl7-keyring omarchy-sl7-battery qcom-firmware-extract linux-aarch64-pkgbase-shim archinstall)
+expected=(linux-sp11 linux-sp11-dtbs dwhinham-keyring sp11-ath12k-board sp11-audioreach-topology
+	alsa-ucm-conf-sp11 sp11-grab-fw sp11-mac-fixup iptsd-sp11 omarchy-surface-sp11
+	qcom-firmware-extract linux-aarch64-pkgbase-shim archinstall)
 
 grep -q '^DisableSandbox' /etc/pacman.conf ||
 	sed -i '/^\[options\]/a DisableSandbox' /etc/pacman.conf
@@ -30,22 +33,30 @@ mkdir -p "$repo" "$work/out"
 chown builder:builder "$work/out"
 
 # Build one PKGBUILD directory as the unprivileged builder user. --nodeps: the
-# packages are files and scripts only, and their runtime dependencies (omarchy,
-# linux-sl7, ...) come from other repositories at install time.
-build_pkg() { # directory
-	local dir="$1" name
+# runtime dependencies (omarchy, linux-sp11, ...) come from other repositories
+# at install time. With "deps", the PKGBUILD's depends/makedepends/checkdepends
+# are installed from the ALARM repositories first (as root), for packages that
+# compile something.
+build_pkg() { # directory [deps]
+	local dir="$1" name info
+	local -a need=()
 	name="$(basename "$dir")"
 	[ -f "$dir/PKGBUILD" ] || { echo "build-repo: no PKGBUILD in $dir" >&2; exit 1; }
 	echo "==> building $name"
 	rm -rf "${work:?}/$name"
 	cp -a "$dir" "$work/$name"
 	chown -R builder:builder "$work/$name"
+	if [ "${2:-}" = deps ]; then
+		info="$(runuser -u builder -- bash -c "cd '$work/$name' && makepkg --printsrcinfo")"
+		mapfile -t need < <(awk -F' = ' '$1 ~ /^\t(depends|makedepends|checkdepends)$/ { sub(/[<>=].*/, "", $2); print $2 }' <<<"$info")
+		[ "${#need[@]}" = 0 ] || pacman -S --noconfirm --needed "${need[@]}"
+	fi
 	runuser -u builder -- env PKGDEST="$work/out" \
 		bash -c "cd '$work/$name' && makepkg --nodeps --noconfirm --force --cleanbuild"
 }
 
-build_pkg "$src/omarchy-sl7-keyring"
-build_pkg "$src/omarchy-surface-sl7"
+build_pkg "$src/omarchy-surface-sp11"
+build_pkg "$src/iptsd-sp11" deps
 build_pkg "$src/upstream/qcom-firmware-extract"
 build_pkg "$src/upstream/linux-aarch64-pkgbase-shim"
 
@@ -63,18 +74,18 @@ find "$work/out" -maxdepth 1 -name '*.pkg.tar.*' ! -name '*-debug-*' -exec cp -v
 find "$prebuilt" -name '*.pkg.tar.*' ! -name '*.sig' ! -name '*-debug-*' -exec cp -v {} "$repo/" \;
 
 cd "$repo"
-rm -f omarchy-sl7.db* omarchy-sl7.files* omarchy.db
-repo-add omarchy-sl7.db.tar.gz ./*.pkg.tar.*
+rm -f omarchy-sp11.db* omarchy-sp11.files* omarchy.db
+repo-add omarchy-sp11.db.tar.gz ./*.pkg.tar.zst
 # omarchy-iso-make and build-iso.sh insist on a file named omarchy.db inside the
 # --local-repo directory. Nothing reads it: the repository section is
-# [omarchy-sl7] (installer/iso-patches/0005).
-ln -sf omarchy-sl7.db omarchy.db
+# [omarchy-sp11] (installer/iso-patches/0005).
+ln -sf omarchy-sp11.db omarchy.db
 
 # Every package the installer needs must be listed in the database.
-listing="$(tar -tzf omarchy-sl7.db.tar.gz)"
+listing="$(tar -tzf omarchy-sp11.db.tar.gz)"
 for name in "${expected[@]}"; do
 	if ! grep -Eq "^$name-[0-9][^/]*/desc$" <<<"$listing"; then
-		echo "build-repo: $name is missing from omarchy-sl7.db" >&2
+		echo "build-repo: $name is missing from omarchy-sp11.db" >&2
 		exit 1
 	fi
 done

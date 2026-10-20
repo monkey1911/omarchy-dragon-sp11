@@ -1,492 +1,159 @@
-```text
-                 ▄▄▄
- ▄█████▄    ▄███████████▄    ▄███████   ▄███████   ▄███████   ▄█   █▄    ▄█   █▄
-███   ███  ███   ███   ███  ███   ███  ███   ███  ███   ███  ███   ███  ███   ███
-███   ███  ███   ███   ███  ███   ███  ███   ███  ███   █▀   ███   ███  ███   ███
-███   ███  ███   ███   ███ ▄███▄▄▄███ ▄███▄▄▄██▀  ███       ▄███▄▄▄███▄ ███▄▄▄███
-███   ███  ███   ███   ███ ▀███▀▀▀███ ▀███▀▀▀▀    ███      ▀▀███▀▀▀███  ▀▀▀▀▀▀███
-███   ███  ███   ███   ███  ███   ███ ██████████  ███   █▄   ███   ███  ▄██   ███
-███   ███  ███   ███   ███  ███   ███  ███   ███  ███   ███  ███   ███  ███   ███
- ▀█████▀    ▀█   ███   █▀   ███   █▀   ███   ███  ███████▀   ███   █▀    ▀█████▀
-                                       ███   █▀
-```
+# omarchy-dragon-sp11
 
-# omarchy-dragon-sl7
+**Omarchy for the Microsoft Surface Pro 11 (Snapdragon X)**
 
-**Omarchy for the Microsoft Surface Laptop 7 (Snapdragon X)**
+> Unofficial personal port. Not affiliated with or endorsed by Omarchy/Basecamp,
+> Microsoft or Qualcomm, and not part of the Surface Pro 11 archiso project it builds on.
 
-> Unofficial community port. Not affiliated with or endorsed by Omarchy/Basecamp, Microsoft or Qualcomm.
+This repository is a thin layer on top of three things, and it only works because of them:
 
-[![Buy Me A Coffee](https://img.shields.io/badge/Buy%20Me%20A%20Coffee-support%20my%20work-FFDD00?style=for-the-badge&logo=buy-me-a-coffee&logoColor=black)](https://buymeacoffee.com/qBitnaut)
-
-The logo above is Omarchy's (MIT licensed).
-
-This project is a thin overlay on upstream omacom/omarchy and omarchy-iso (dragon
-branches). It ships its own `linux-sl7` kernel, a touchpad daemon, an add-on package
-with the device glue, and a signed package repository. Firmware is fetched at install
-time and never redistributed.
+- **[omacom/omarchy](https://github.com/omacom/omarchy) and
+  [omarchy-iso](https://github.com/omacom/omarchy-iso)** (the `dragon` ARM64 branches),
+  which already know how to install Omarchy on Snapdragon laptops.
+- **[dwhinham/archiso-aarch64-sp11](https://github.com/dwhinham/archiso-aarch64-sp11)
+  and [dwhinham/archlinux-repo](https://github.com/dwhinham/archlinux-repo)** by Dale
+  Whinham and contributors: the `linux-sp11` kernel, the Surface Pro 11 device trees,
+  Wi-Fi, audio and firmware tooling, and the upstream kernel work behind them. This port
+  uses their signed packages as published. **Please do not report problems with this port
+  on their issue tracker.** If something also fails on their own ISO, report it there;
+  otherwise it is this port's problem.
+- **[qBitnaut/omarchy-dragon-sl7](https://github.com/qBitnaut/omarchy-dragon-sl7)**
+  (MIT), the Omarchy port for the Surface Laptop 7 that this repository was forked from.
+  The installer patch approach, the build pipeline and much of the add-on package are
+  adapted from it.
 
 ## Status
 
-**Alpha.** In daily use on a 13.8" Surface Laptop 7 with a Snapdragon X Plus
-(X1P-64-100, 16 GB). The X Elite models and the 15" model are untested and
-best-effort: the device trees and packages cover them, but nobody has booted them.
-Expect rough edges, and read [What works](#what-works) before you wipe a disk. See
-[PLAN.md](PLAN.md) for the longer plan and research notes.
+**Untested on hardware.** The ISO pipeline builds, but nobody has booted it on a Surface
+Pro 11 yet. Hardware support is whatever `linux-sp11` provides; see the
+[Surface Pro 11 archiso status table](https://github.com/dwhinham/archiso-aarch64-sp11#whats-working)
+(touchscreen and pen, Wi-Fi, audio, suspend work there; cameras and the 5G modem do not).
 
-## Install
+Known gaps of this port:
 
-> **Use at your own risk.** This is an unofficial, experimental community project with no
-> warranty, and it is not affiliated with Microsoft, Qualcomm or Omarchy. **Installing WIPES
-> Windows and everything on the internal SSD.** Before you start:
->
-> - [ ] Back up all personal data somewhere else.
-> - [ ] Save the BitLocker recovery key (`tools/windows/Prepare-SL7.ps1` can write it to a USB stick).
-> - [ ] Note your Windows licence and Microsoft account details.
-> - [ ] Install all Windows and Surface firmware updates first: Surface firmware only
->       updates through Windows Update, so it will not update once Windows is gone.
-> - [ ] Keep Microsoft's Surface driver MSI (the firmware comes from it).
-> - [ ] Optional: create a Surface recovery USB from Microsoft's Surface recovery image
->       download (you enter your device's serial number there) so Windows can be restored later.
-> - [ ] Check how a modified OS affects your warranty or support terms.
+- **OLED (Snapdragon X Elite) model only.** systemd selects the OLED device tree for every
+  Surface Pro 11, so the LCD (X Plus) model would boot with the wrong one. Not handled yet.
+- **No online package repository of its own yet.** `linux-sp11` and the `sp11-*` packages
+  update from `[dwhinham]` with `omarchy update`; `omarchy-surface-sp11` and `iptsd-sp11`
+  only change when you reinstall them from a newer ISO.
 
-Short version, for a 13.8" Surface Laptop 7. The installer **wipes the disk you pick** and
-does not keep Windows. Details for every step are in
-[Fresh install from the installer ISO](#fresh-install-from-the-installer-iso).
+## What the port does
 
-1. **Download the latest ISO** from the
-   [installer-latest release](https://github.com/qBitnaut/omarchy-dragon-sl7/releases/tag/installer-latest),
-   rebuilt on every change. It is over GitHub's 2 GiB asset limit, so it comes in parts:
-   ```
-   cat NAME.iso.part-* > NAME.iso     # NAME = the ISO's file name on the release page
-   sha256sum -c NAME.iso.sha256
-   gpg --import omarchy-sl7.pub.asc   # from the same release
-   gpg --status-fd 1 --verify NAME.iso.sha256.sig NAME.iso.sha256   # needs VALIDSIG 6387C619EF246F6F20C536B72C3331C78353BA04
-   ```
-   The `.sha256` only proves the download is intact; the signature proves it came from the
-   project. Trust the key only if its fingerprint is `6387C619EF246F6F20C536B72C3331C78353BA04`
-   (also in [SECURITY.md](SECURITY.md)); the key file on the release is not trusted by itself.
-   `make-install-usb.sh` (step 2) does the download, reassembly, checksum and signature check
-   for you and refuses an ISO whose signature is missing or not from that key.
-   The ISO contains no Microsoft or Qualcomm firmware.
-2. **Make the install stick** on any Linux machine (16 GB or larger USB stick):
-   ```
-   tools/installer-kit/get-sl7-firmware.sh        # fetches Microsoft's public Surface MSI, your own copy
-   tools/installer-kit/make-install-usb.sh --device /dev/sdX   # latest release ISO + SL7DATA firmware and camera staging
-   ```
-   `make-install-usb.sh` defaults to `--from-release`; use `--iso FILE` for a file you
-   already have or `--from-ci RUNID|latest` for a CI artifact. Run it as yourself, not
-   with `sudo`.
-3. **If Windows is still installed**, optionally run `tools/windows/Prepare-SL7.ps1`
-   (read-only): it confirms the model, shows the BitLocker status and can save the recovery
-   key to a USB stick, and reports Secure Boot. Then turn Secure Boot off in the Surface UEFI
-   (hold Volume Up, press Power; Security > Secure Boot: None).
-4. **Boot from the USB-A port** (Volume Down + Power, on AC power) and run the installer.
-   Pick the internal NVMe and set a LUKS passphrase.
-5. **First boot.** The webcam tuning is generated automatically from your own driver
-   package. Set up face unlock from the Omarchy menu: Setup > Security > Face Unlock.
-6. **Updates** arrive through the signed `[omarchy-sl7]` repository: `omarchy-update`
-   carries `linux-sl7`, `iptsd-sl7`, `libcamera-sl7`, the face unlock packages and the
-   add-on.
-
-### From Windows
-
-You do not need Linux to make the install sticks. You need two USB sticks: a 16 GB or
-larger one for the ISO, and a small one (any size, FAT32) for the firmware.
-
-1. **Download** every file of the
-   [installer-latest release](https://github.com/qBitnaut/omarchy-dragon-sl7/releases/tag/installer-latest)
-   into one folder (`NAME.iso.part-00`, `-01`, ..., `NAME.iso.parts.sha256`,
-   `NAME.iso.sha256`, and the `.sig` if present). Open PowerShell in that folder, and set
-   `$iso` to the ISO's name from the release page:
-   ```powershell
-   $iso = 'NAME.iso'
-   # 1. check each part
-   Get-Content "$iso.parts.sha256" | Where-Object { $_.Trim() } | ForEach-Object {
-       $h, $f = $_ -split '\s+', 2; $f = $f.Trim().TrimStart('*')
-       '{0}  {1}' -f $(if ((Get-FileHash $f -Algorithm SHA256).Hash -eq $h) { 'OK  ' } else { 'FAIL' }), $f }
-   # 2. join the parts
-   $out = [IO.File]::Create((Join-Path (Get-Location).Path $iso))
-   Get-ChildItem "$iso.part-*" | Sort-Object Name | ForEach-Object {
-       $in = [IO.File]::OpenRead($_.FullName); $in.CopyTo($out, 1MB); $in.Dispose() }
-   $out.Dispose()
-   # 3. check the ISO
-   (Get-FileHash $iso -Algorithm SHA256).Hash
-   Get-Content "$iso.sha256"        # the two hashes must be identical (case does not matter)
-   ```
-   (`cmd /c copy /b NAME.iso.part-00+NAME.iso.part-01+NAME.iso.part-02 NAME.iso` joins
-   them too.) Also check the signature: install [Gpg4win](https://www.gpg4win.org), then in
-   PowerShell `gpg --import omarchy-sl7.pub.asc` and
-   `gpg --status-fd 1 --verify "$iso.sha256.sig" "$iso.sha256"`. It must print
-   `VALIDSIG` followed by `6387C619EF246F6F20C536B72C3331C78353BA04` (the key's fingerprint,
-   also in [SECURITY.md](SECURITY.md)); do not use the ISO otherwise.
-2. **Write the ISO** to the large stick with [Rufus](https://rufus.ie) or
-   [balenaEtcher](https://etcher.balena.io). In Rufus choose the ISO, then **DD Image mode**
-   when it asks (not ISO Image mode: the ISO is a hybrid image and must be copied as is). Etcher
-   needs no options (Flash from file). Afterwards Windows may say the stick needs formatting
-   or cannot be read: **do not format it**; eject it.
-3. **Make the firmware stick** (the second one). Format it in File Explorer (right-click the
-   drive, Format) as **FAT32** with the volume label **SL7DATA**. Then download
-   [`Make-SL7DATA.ps1`](tools/windows/Make-SL7DATA.ps1) (repository page, Raw, save as) and run:
-   ```powershell
-   Set-ExecutionPolicy -Scope Process Bypass
-   .\Make-SL7DATA.ps1 -Drive E        # E = the SL7DATA stick; add -Msi FILE if you have the MSI
-   ```
-   It downloads Microsoft's public Surface Laptop 7 driver MSI (about 1 GB, known sha256; the previous package is the fallback, and `-Msi FILE` takes one you downloaded by hand),
-   unpacks it without installing, checks the firmware files, and copies firmware and camera
-   tuning to the stick. It refuses any drive that is not FAT32 labelled `SL7DATA`, never
-   formats, and verifies what it wrote. The live installer finds `SL7DATA` on any USB
-   stick, so the firmware can be on the second stick.
-4. **Optionally**, still in Windows, run `tools\windows\Prepare-SL7.ps1` on the Surface
-   (BitLocker recovery key, Secure Boot state), then turn Secure Boot off in the Surface UEFI.
-5. **Boot**: plug **both** sticks into the Surface (the ISO stick in the USB-A port; a USB
-   hub is fine) and continue with step 4 of the short version above.
-
-This path has not been tested on Windows yet; please report problems.
-
-## What works
-
-Measured on the 13.8" X1P. "Works" means used daily without known problems;
-"Partial" means it runs with a documented gap or has not been checked as thoroughly.
-
-| Feature | Status | Notes |
-|---|---|---|
-| Keyboard | Works | Surface Aggregator modules in the initramfs, so it also works at the LUKS prompt. The prompt can be blank for the first boots: type blind. |
-| Touchpad | Works | `iptsd-sl7` (a fork with Surface Laptop 7 fixes). Tap-to-click is off by default (it caused false clicks while scrolling; set `tap_to_click = true` in `~/.config/hypr/input.lua` to bring it back). Drag latch keeps click-and-drag held, and lift-and-continue works: the drag stays while the physical click is held (iptsd-sl7 patch 0008, verified on the SL7). Disable-while-typing is active. A watchdog re-enables multitouch if the pad falls back to mouse mode. Haptic strength and click force follow Windows' settings (see [Touchpad settings](#touchpad-settings)). Gestures are your own Hyprland (Lua) config. |
-| Touchscreen | Partial | SPI touch modules only (the 13.8" unit here). Units with the I2C module are not covered. Pen is untested. |
-| Display | Works | Native 2304x1536 at 120 Hz. |
-| Variable refresh (VRR) | Works | 24-120 Hz, on by default (`msm.vrr_enabled=1`; Hyprland `misc.vrr` set by the power mode service). Panel measured at 24 Hz idle, about 116 Hz under motion, no flicker. No chip-rail power change; battery power not measurable yet. Off: remove the `msm.vrr_enabled=1` line from `/etc/limine-entry-tool.d/omarchy-surface-sl7.conf`, `sudo limine-mkinitcpio`, reboot. |
-| Panel self refresh (PSR) | Not yet | Known broken: the panel goes black when idle. Keep it off. |
-| GPU acceleration | Works | Adreno via `msm`; the zap shader comes from the Microsoft MSI. |
-| Hardware video (Iris) | Works | Enabled in the device tree with the Microsoft signed firmware from the MSI (`omarchy-surface-sl7-firmware`). Verified on the SL7: decode in mpv (`--hwdec=v4l2m2m-copy`), and H.264 encode with ffmpeg (`-pix_fmt nv12 -c:v h264_v4l2m2m`; 1080p30 at 19x real time). V4L2 decode (H.264, HEVC, VP9, AV1) and encode (H.264, HEVC) for mpv, ffmpeg and GStreamer; the encoder takes NV12 input only. Firefox-based browsers (Zen 157) try V4L2 decode and fall back to software. |
-| Wi-Fi | Works | WCN7850 with a board-file fix and the factory MAC restored. |
-| Bluetooth | Partial | Works with the factory address restored (it does not work at all without it); less tested than Wi-Fi. |
-| Audio | Partial | Speakers and microphones work with the kernel volume caps. The Pro Audio profile is deliberately blocked to protect the speakers. Headphone jack quality is unverified. |
-| Battery percentage and charging | Works | `qcom_battmgr` patch for capacity; Omarchy's battery scripts are patched to see the Qualcomm gauge. |
-| USB-C charging and USB 3 | Works | Both ports charge and run USB 3 (10 Gb/s), in either plug orientation (SuperSpeed on the reversed orientation fixed by ps883x patch 0090, on by default since linux-sl7 7.2.8-18), with DisplayPort alt mode and docks. USB4 and Thunderbolt bandwidth is not available yet. |
-| Suspend and resume | Works | Deep suspend (`deep`), touch restarted after resume, about 0.35 W overnight. See [power results](#power-and-performance-results-so-far) for the drain. |
-| Front webcam | Works | OV02C10 through libcamera's GPU software ISP (Adreno, EGL); the hardware ISP is not used, because CAMSS delivers raw frames only. Our `libcamera-sl7` build (0.7.2-4.3) adds the sensor helper, a fast auto-exposure start, a fix for GPU-mode 720p metering, Adjust defaults read from the tuning file, and hides the IR camera from libcamera so PipeWire and `cam` can no longer hold the face unlock sensor. Colour tuning is generated at install from your own Surface driver package and never redistributed; defaults chosen on the SL7: set 1, blend 0.6, contrast 1.2, saturation 1.05 (`sl7-camera-tuning` adjusts them, `sl7-camera-check` collects diagnostics). Verified on the SL7: much better colour, no grey start. The sensor runs from a 12 MHz clock; `linux-sl7` 7.2.8-23 (patches 0099/0100) fixes the frame rate from 18.8 to 30 fps and the exposure timing (verified on the SL7: 30 fps on `linux-sl7` 7.2.8-23). See the [webcam section](pkgs/omarchy-surface-sl7/README.md#8k-front-webcam-sl7-camera-tuning-sl7-camera-check) for browser setup. |
-| IR camera | Works | ST VD55G0, 644x604 greyscale, through `sl7-ir-bridge`, lit by the built-in IR emitter (verified 2026-10-07: self-test frames brighter than unlit, no black frames). Known issue: libcamera/PipeWire can grab the IR camera and block face unlock; workaround `systemctl --user restart pipewire wireplumber && sudo systemctl restart sl7-ir-bridge`. A package update that hides the IR camera from libcamera and PipeWire is in progress (not yet published). |
-| Face unlock | Works | Verified on the SL7 (2026-10-07), on the normal boot (there is no IR test boot entry): face registered in the setup app, lock screen and `sudo` unlocked by face, no external IR source needed. howdy-next plus a setup app (Omarchy menu: Setup > Security > Face Unlock). The built-in IR emitter is driven by the sensor's own strobe (stage C found that GPIO 1 lights it), held by the kernel (linux-sl7 7.2.8-22) to Windows Hello's 100-line exposure and frame time, whatever user space asks: on the SL7 sensor clock that is 0.8 ms of light per 27.8 ms frame (2.9 % duty, Windows 5.7 %). `sl7-ir-bridge` lights it only while a scan streams, 10 s at most per session, with analog gain 24 as the default; `howdy-next` 2 silences a harmless OpenCV warning; `IR_EMITTER=off` in `/etc/sl7-ir-bridge.conf` keeps it dark. |
-| CPU frequency scaling | Works | All three clusters, `schedutil`, with the SCMI sustained-frequency fix. |
-| Power mode on AC/battery | Works | Caps CPU and GPU frequency and enables Wi-Fi power save on battery; restores everything on AC. 60 Hz switching on battery is opt-in. |
-| Battery app | Works (verified on the SL7) | `omarchy-sl7-battery`: a Quickshell popup that replaces Omarchy's Power bar widget. Charge, time left with a dot-chart projection, hours since the last full charge, history (6h to 30d), sleep drain, power profiles and an auto power saver (switches to Power saver at 30%). Data from `sl7-batteryd`, a small Rust user daemon. |
-| Firmware | Works | Fetched from Microsoft's Surface Laptop 7 driver MSI, never shipped here. |
-| Hibernation | Not yet | The image write hangs, and the RTC alarm is owned by the ADSP. |
-
-### Touchpad settings
-
-Set in `/etc/iptsd.d/94-local.conf` (restart `iptsd` after editing). Full list in the
-[iptsd-sl7 README](pkgs/iptsd-sl7/README.md).
-
-| Setting | Values | Status |
-|---|---|---|
-| `[Touchpad] HapticIntensity` | 0 to 100 (Windows semantics) | Applied on the SL7 (patch 0009, iptsd-sl7 16) |
-| `[Touchpad] ClickForce` | `low`, `medium`, `high` (Windows semantics) | Applied on the SL7 (patch 0009, iptsd-sl7 16) |
-| `[Touchpad] PalmMode` | `windows` (default), `freeze` | Verified on the SL7: palm rejection works as expected (patch 0010, iptsd-sl7 17) |
-
-`PalmMode = windows` ignores a resting palm while the other fingers and the click keep
-working; `freeze` is the older behaviour. Verified on the SL7: palm rejection works as
-expected.
-
-## Install
-
-### Before you start (if Windows is still installed)
-
-Nothing needs to be captured from Windows. The firmware comes from Microsoft's public
-driver MSI (step 2 below) and the Wi-Fi and Bluetooth MAC addresses are read from the
-UEFI at every boot. `tools/windows/Prepare-SL7.ps1` is an optional read-only check: it
-confirms the model and CPU, shows the BitLocker status (and can save the recovery key to
-a USB stick), and reports the UEFI version and Secure Boot state. It uploads nothing and
-changes no setting. Read the script first, then in an administrator PowerShell:
-
-```
-Set-ExecutionPolicy -Scope Process Bypass; .\Prepare-SL7.ps1          # add -WhatIf for a dry run
-```
-
-### Fresh install from the installer ISO
-
-(Windows users: see [From Windows](#from-windows) above for the equivalent of steps 1 to 3.)
-
-> The ISO is the least-tested path. The kit's own README records a full ISO build
-> and a boot on the SL7 as not yet verified. If you already run Omarchy on the
-> machine, [update in place](#updating-an-existing-install) instead.
-
-The installer **wipes the disk you pick** and does not keep Windows.
-
-1. **Get the ISO.** Download it from the
-   [installer-latest release](https://github.com/qBitnaut/omarchy-dragon-sl7/releases/tag/installer-latest)
-   (built by the `installer-iso` workflow on every change to `main`; parts of 1900 MiB
-   because of GitHub's 2 GiB asset limit, with a `.sha256` and, when signing is
-   configured, a signature). `make-install-usb.sh` fetches and checks it itself. The build
-   takes the newest signed packages from the `repo-aarch64` release, so nothing needs
-   re-pinning. To build your own ISO instead, fork the repository and run
-   `gh workflow run installer-iso.yml`.
-2. **Get the firmware.** On any Linux machine (x86 or arm) or macOS, run
-   `tools/installer-kit/get-sl7-firmware.sh`. It downloads Microsoft's Surface Laptop 7
-   driver MSI, checks its sha256 against the known packages (the newest, with the previous one
-   as fallback; if Microsoft has replaced both, pass the MSI you downloaded by hand with
-   `--msi FILE`), extracts it with `msiextract` (`msitools`) and
-   writes `./sl7-msi` (or `$SL7_MSI`) in the layout the kit reads
-   (`extracted/ProgramFiles64Folder/SurfaceUpdate` and `SHA256SUMS.extracted`). Pass
-   `--msi FILE` to use an MSI you already have. The stick carries firmware for your own
-   device: do not share it. Skip this step with `--no-firmware` only if you accept that the
-   installer then looks for a Windows driver store, which is gone after the wipe. On a
-   system that is already installed, the add-on's own `omarchy-surface-sl7-firmware`
-   does the same job (`--from-msi FILE`).
-3. **Write the stick** (16 GB or larger) from an Arch-based host:
-   ```
-   sudo pacman -S --needed dosfstools mtools util-linux python github-cli
-   tools/installer-kit/make-install-usb.sh --device /dev/sdX                  # latest release ISO
-   tools/installer-kit/make-install-usb.sh --device /dev/sdX --from-ci latest # newest CI artifact
-   tools/installer-kit/make-install-usb.sh --device /dev/sdX --iso FILE   # FILE.sha256 next to it
-   ```
-   Check the device with `lsblk -o NAME,MODEL,SIZE,TRAN,RM`. Run it as yourself, not
-   with `sudo`. It verifies the checksum, refuses non-removable devices, and makes you
-   type the device path. It adds a small `SL7DATA` partition with the firmware.
-4. **Secure Boot off.** Power off, hold Volume Up and press Power to enter the Surface
-   UEFI, then Security > Secure Boot: None.
-5. **Boot the stick.** Plug it into the **USB-A port** (the live image keeps the DSP
-   driver off because starting it resets USB-C) and stay on AC power. Hold Volume Down
-   while pressing Power, or pick the stick in the UEFI boot menu. Expect a black screen
-   for a minute or two.
-6. **Run the installer.** Choose the **internal NVMe, not the stick**, and set a LUKS
-   passphrase. The unlock prompt may be blank on early boots: type the passphrase
-   blind and press Enter.
-7. **First boot.** Reboot without the stick. The machine should land in `linux-sl7`
-   (the stock `linux-aarch64` entry stays as a rescue kernel and has no internal
-   keyboard). Check with `uname -r` (contains `sl7`) and `sl7-doctor`.
-
-Troubleshooting and the layout of the stick are in
-[tools/installer-kit/README.md](tools/installer-kit/README.md).
-
-### Updating an existing install
-
-For an Omarchy install on a Surface Laptop 7 that was not installed from our ISO. Download,
-read, then run (`curl ... | bash` also works):
-
-```
-curl -fsSLO https://github.com/qBitnaut/omarchy-dragon-sl7/raw/main/tools/bootstrap/omarchy-sl7-bootstrap.sh
-less omarchy-sl7-bootstrap.sh
-bash omarchy-sl7-bootstrap.sh --dry-run    # read-only preview
-bash omarchy-sl7-bootstrap.sh
-```
-
-It checks the machine, fetches the repository public key and requires its fingerprint to be
-`6387C619EF246F6F20C536B72C3331C78353BA04` (embedded in the script), trusts it in pacman's
-keyring, adds `Include = /etc/pacman.d/omarchy-sl7.conf` above `[core]`, installs
-`omarchy-sl7-keyring omarchy-surface-sl7 linux-sl7 linux-sl7-headers iptsd-sl7 omarchy-sl7-battery` in one
-`pacman -Syu` transaction through Omarchy's own wrapper (so the raw-pacman update guard is
-satisfied), and runs `sl7-doctor`. Every step is idempotent. `--no-install` stops before the
-transaction. From then on `omarchy update` carries our packages. Clean installs from our ISO
-need none of this: the installer includes `omarchy-sl7-keyring`, `omarchy-surface-sl7` and the battery app (`omarchy-sl7-battery`);
-the add-on enables the repository at first boot. The battery app comes by default (`omarchy-surface-sl7` depends on it, so `omarchy update` installs it on existing systems too).
-
-If a later Omarchy change drops the repository, `sudo omarchy-sl7-repo-ensure` puts it back
-(it also runs after `omarchy`/`omarchy-settings` upgrades, at boot, and from an
-`omarchy refresh pacman` hook). `sl7-doctor` reports the state.
-
-### Day to day
-
-- `omarchy update` carries our packages (`linux-sl7`, `iptsd-sl7`, `omarchy-surface-sl7`
-  and the face unlock packages), because the repository sits above Omarchy's in
-  `pacman.conf`.
-- After a kernel update, **power off and on** rather than rebooting. A warm reboot
-  can leave some devices in a state a full power cycle clears.
-- Run `sl7-doctor` after updates to check the kernel, firmware, repository and power
-  state.
-
-## Tools
-
-All ship in `omarchy-surface-sl7` unless noted.
-
-| Tool | What it does |
+| Piece | What it is |
 |---|---|
-| `sl7-doctor` | Read-only health check: kernel and device tree, cpufreq, initramfs modules, firmware, touch, boot order, repository, power mode, PSR and VRR state. Exits 1 on failure. |
-| `sl7-powertest` | Measures idle or video power from the battery gauge with a pinned brightness, and compares two runs. |
-| `sl7-sleepstats` | Prints SoC sleep counters (`cxsd`, `ddr`, `aosd`); `--trace` finds what blocks deep sleep, `--suspend-test` runs a measured suspend. |
-| `sl7-ir-probe` | Read-only camera probe: sensor binding, media topology and a 30-frame IR capture. |
-| `sl7-camera-tuning` | Builds the front webcam's libcamera tuning file from Microsoft's driver package, on your machine (`--blend`, `--dry-run`, `--status`, `--remove`). |
-| `sl7-camera-check` | Captures GPU and CPU frames at 1080p and 720p, raw and dark frames, logs and a CPU/power sample into `~/sl7-camera-<time>/` and tars it. |
-| `omarchy-sl7-powermode` | Applies or shows the power mode: frequency caps, Wi-Fi power save and display settings chosen from the power source and the power profile (power-saver is stricter, performance uncapped). |
-| `omarchy-sl7-bag-guard` | Service (on by default): suspends, then powers off, a laptop left awake with the lid closed on battery and no external display, or too hot; `--check` shows the decision without acting. |
-| `omarchy-sl7-test-entry` | Adds optional boot entries for experiments (`psr`, `clk-unused`); off by default. |
-| `omarchy-sl7-faceunlock` | Face Unlock setup and face manager (Omarchy menu: Setup > Security > Face Unlock). Package `omarchy-sl7-faceunlock`. |
-| `omarchy-sl7-battery-plugin` | Installs the SL7 Battery plugin for your user and swaps it in for the Power bar widget once; `uninstall` puts the Power widget back. Package `omarchy-sl7-battery` (also ships `sl7-batteryd`, the battery daemon; open the app with `omarchy-shell qbit.sl7battery toggle`). |
-| `sl7-ir-bridge` | On-demand bridge from the IR camera to a stable V4L2 device, `/dev/v4l/by-id/sl7-ir-camera`. Package `sl7-ir-bridge`. |
+| `installer/iso-patches/` | 7 small patches to `omarchy-iso`: a Surface Pro 11 entry in `platforms.json` (matched by DMI `Microsoft Surface Pro, 11th Edition`), `linux-sp11` as the live kernel with its device trees, the Flex Keyboard modules in the live initramfs, the local `[omarchy-sp11]` repository, and a larger console font |
+| `pkgs/omarchy-surface-sp11` | the add-on package installed on the target: initramfs modules, device trees in the boot image, `linux-sp11` first in the Limine menu, the `[dwhinham]` repository for kernel updates, the `qcom_battmgr` blacklist, a speaker-safety audio rule, and `omarchy-sp11-firmware`. Details in its [README](pkgs/omarchy-surface-sp11/README.md) |
+| `pkgs/iptsd-sp11` | upstream iptsd 3.1.0 (touchscreen and pen) rebuilt for Arch Linux ARM |
+| `installer/scripts/` | the build pipeline: pinned upstreams, signature-checked download from `[dwhinham]`, package repository, ISO content checks |
+| `tools/build-iso.sh` | the same build on your own machine |
+| `upstream.lock` | every pinned input |
 
-## Power and performance results so far
+The installed system boots `linux-sp11` from a unified kernel image that carries the
+Surface Pro 11 device tree. The stock `linux-aarch64` kernel stays installed as a second
+(rescue) boot entry.
 
-Measured on the 13.8" X1P-64-100 (16 GB). Numbers are from `sl7-powertest` and the
-battery gauge. For a while the gauge reported `energy_now` in whole percent (about 496 mWh),
-so idle watts were taken as the integral of `power_now`. It now reports fine-grained energy
-again; each figure below says which method it used.
+## Before you install
 
-### Idle
+> **A full-disk install wipes the internal SSD, including Windows.** To keep Windows, use the
+> installer's *Free space install* (see [Dual boot](#dual-boot)). Either way, do these first:
 
-About **2.9 W** at 30% brightness with the browser closed, on battery, measured over
-20 minutes with the battery gauge. An earlier bug in the measuring tool overstated
-the savings; these are the corrected numbers.
+- [ ] Back up everything you want to keep.
+- [ ] Install all Windows and Surface firmware updates. Surface firmware only updates from
+      Windows.
+- [ ] **Turn off BitLocker / Device encryption** (Settings > Privacy & security > Device
+      encryption, or `manage-bde -off C:` as administrator) and wait for decryption to
+      finish. The installer copies the GPU and DSP firmware from Windows just before it
+      wipes the disk, and it cannot read an encrypted partition. If you skip this, use
+      `sudo omarchy-sp11-firmware` after installing (needs Wi-Fi).
+- [ ] Write down the Wi-Fi and Bluetooth MAC addresses (`getmac /v` and the Bluetooth
+      adapter's properties in Device Manager, or `ipconfig /all`). Linux cannot read
+      them, and Bluetooth does not work without them.
+- [ ] Optionally make a Surface recovery USB from Microsoft's recovery image page, so
+      Windows can be put back later.
+- [ ] Turn **Secure Boot off**: hold Volume Up while powering on, Security > Secure Boot >
+      None.
 
-### Awake, against Windows 11 (preliminary)
+## Get the ISO
 
-Same-spec Surface Laptop 7 13.8" (X1P-64-100) pair, on battery, 50% brightness locked,
-30 minute idle desktop, average discharge power. **Preliminary: a re-run with the latest
-fixes (kernel and packages) is pending.**
+The ISO is built by GitHub Actions on this repository
+(`.github/workflows/installer-iso.yml`, about an hour on GitHub's ARM runners):
 
-| Bench | Windows 11 | Linux (7.2.8-15) |
-|---|---|---|
-| v1 (first scripts; Linux gauge in whole percent steps) | 3.19 W | 3.27 W |
-| v2 (fixed scripts, `power_now` integrated on Linux) | 3.08 W | **2.95 W** (about 4% lower) |
+1. On a fork, enable Actions once (the Actions tab, "I understand my workflows").
+2. A push that touches `installer/`, `pkgs/`, `tools/` or `upstream.lock` starts a build;
+   so does "Run workflow" on the installer-iso workflow page.
+3. Download it from the finished run's **omarchy-sp11-installer-iso** artifact (any
+   branch, kept 14 days), or from the `installer-latest` release (builds of `main` only).
+   The release splits the ISO into parts because it is over 2 GiB:
+   ```
+   cat NAME.iso.part-* > NAME.iso
+   sha256sum -c NAME.iso.sha256
+   ```
 
-The Linux v2 run predates the DPU per-mixer clock fix (7.2.8-16) and the Wi-Fi power-save
-fix (`omarchy-surface-sl7` 32), so a re-run with both is pending. Windows had its background
-services (search indexer and similar) active. One run per cell, so treat differences of a
-few percent as indicative only.
+To build it yourself instead, see [Building locally](#building-locally).
 
-### Suspend
+## Install
 
-Deep suspend, 8 to 10 minute traces with `sl7-sleepstats --trace`:
+These steps follow the
+[Surface Pro 11 archiso boot instructions](https://github.com/dwhinham/archiso-aarch64-sp11#boot-instructions),
+which are precise for a reason:
 
-| Metric (8-10 min deep suspend) | 7.2.8-7/-9 (before) | 7.2.8-11 (after) |
-|---|---|---|
-| **DDR self-refresh** (qcom_stats `ddr`, `lpm-0xd4`) | 0% of suspend, 0 entries | **~95% of suspend** (419 of 442 s; 584 of 615 s) |
-| DDR bandwidth votes in the RPMh sleep set | MC0/SH0/SH1 held | all released |
-| PCIe links (NVMe, Wi-Fi) | kept up through suspend | powered off, relinked on resume (Gen4 x4, Gen3 x2) |
-| ADSP wakeups | ~104/s | ~11.5/s |
-| XO (crystal) | held | still held (one prepare) |
-| CX power collapse (`cxsd`) | no | not yet |
-| Suspend power (overnight) | 0.8-0.9 W (8 h 25 min, 16% of 48.6 Wh, 7.2.8-4) | **about 0.35 W average** (0.31-0.42 W range; 7.2.8-13 and -22) |
-| Battery life asleep, full charge | about 2.4 days | **about 6 days** |
+1. **Write the ISO** to a USB stick (16 GB or more) as a raw image:
+   `sudo dd bs=4M if=NAME.iso of=/dev/sdX conv=fsync oflag=direct status=progress`, or
+   balenaEtcher on Windows. Do not use Ventoy, or Rufus in ISO mode.
+2. **Boot it from the UEFI menu**: hold Volume Up while the Surface restarts, tap
+   *Boot configuration*, and swipe left on *USB Storage* to boot it immediately. Don't rely
+   on boot order alone.
+3. **Wait.** The screen can stay black for a couple of minutes while the image unpacks.
+4. Run the Omarchy installer. Its log should show `hardware profile: Microsoft Surface Pro 11`.
+   If it doesn't, stop: the Surface Pro 11 packages would not be installed. Check
+   `cat /sys/class/dmi/id/product_name` and report it.
+5. Pick the internal NVMe, choose *Full disk install* or *Free space install*, and set the
+   disk encryption passphrase. The Flex Keyboard works
+   at the unlock prompt if it is attached (the modules are in the initramfs; untested).
 
-To our knowledge, this is the first published DDR self-refresh in suspend on a
-shipping Snapdragon X (X1E/X1P) laptop under Linux, with all DSPs running. The only
-earlier CX/DDR collapse we found was on Qualcomm's reference CRD with an experimental
-branch that disables the ADSP. Reports from the Dell Inspiron 7441, Latitude 7455,
-Yoga Slim 7x and IdeaPad Slim 5x show `ddr` at 0.
+## Dual boot
 
-Latest overnight, 7.2.8-22, 7-8 October (charger unplugged): the whole night, 20:24 to
-07:37 (11.2 h), took the battery from 75% to 67%, about **0.35 W** on average, roughly 6
-days of standby on a full charge. A 5.1 h stretch of it was measured precisely at **0.42
-W**, because the gauge now reports fine-grained energy; the whole-night figure comes from
-whole-percent readings. DDR was in self-refresh for about 94% of the time asleep.
+Omarchy's installer can install beside Windows instead of wiping it:
 
-The earlier night on 7.2.8-13 (`sl7-sleepstats --suspend-test`) gave 2948 mWh over 9 h 20
-min, **0.31 W**, but was measured with whole-percent quantisation (about 0.05 W of
-uncertainty), so read the range as 0.31 to 0.42 W rather than a single figure. Both are about half or less of
-the Windows figure of 0.8 to 0.9 W. CX power collapse is not reached yet
-because one XO prepare still holds.
+1. In Windows, turn BitLocker off and let it finish decrypting. The installer refuses a
+   disk with BitLocker on; suspending it is not enough.
+2. Shrink the Windows partition in Disk Management (or `diskmgmt.msc`) and leave the space
+   **unallocated**. Omarchy needs at least 32 GB, plus 2 GB for its own EFI partition.
+3. In the installer, pick *Free space install (alongside existing data)*. It creates its own
+   EFI partition and leaves the Windows one untouched.
+4. Choose the system at power-on from the Surface UEFI menu (hold Volume Up, *Boot
+   configuration*).
 
-One harmless stray wake happened about 5 h into the suspend (about 26 s awake, then it
-suspended again). Wake-source logging is now on: `journalctl -t omarchy-surface-sl7 | grep wake`.
+A dual boot also keeps the firmware source at hand: `sudo qcom-firmware-extract --install`
+re-reads it from the (decrypted) Windows partition at any time.
 
-### What made the difference
+## After the first boot
 
-From the `linux-sl7` README (Power sections):
+- **Firmware.** If the installer could not copy it from Windows, connect to Wi-Fi and run
+  `sudo omarchy-sp11-firmware`, then reboot. `omarchy-sp11-firmware --status` lists what is
+  missing.
+- **MAC addresses.** Put them in `/etc/sp11-mac.conf` (`WIFI_MAC=` and `BT_MAC=`) and
+  reboot.
+- **Updates.** `omarchy update` updates `linux-sp11` from the `[dwhinham]` repository.
+  `omarchy-sp11-repo-ensure --check` shows whether that repository is configured.
+- **If it does not boot**, pick the `linux-aarch64` entry in the Limine menu.
 
-- The 7.3 PDC pass-through and `domain_ss3` deepest-idle backport.
-- The 7.4 pmdomain and cpuidle-psci backport (cores that never come online no longer
-  pin their cluster).
-- qcom-geni serial force suspend, so the Surface Aggregator UART stops holding clocks.
-- The ps883x retimer releasing its XO clock while in reset.
-- PCIe root ports reaching D3hot (`d4c79b63d82d`), so the NVMe and Wi-Fi links power
-  off.
-- The Qualcomm Crypto Engine driver disabled (it held a permanent DDR vote).
-- `schedutil` with the SCMI sustained-frequency fix for cpufreq.
+## Building locally
 
-### Bag guard and USB power
+`tools/build-iso.sh [WORKDIR]` runs the whole pipeline with Docker:
 
-- **Bag guard** (`omarchy-sl7-bag-guard`, on by default): lid closed, on battery and no
-  external display, and still awake after 120 s, so it suspends again. After 3 failed
-  suspends, or more than 60 degC for 60 s, it powers off. `omarchy-sl7-bag-guard --check`
-  shows the decision without acting.
-- **USB-A** runtime power management is opt-in and tested OK on the SL7:
-  `sudo sl7-usb-rpm enable a400000.usb --record`. **USB-C** stays always on, because of a
-  wake-on-plug issue (future research); `sl7-usb-rpm` refuses to record it without `--force`.
-- **USB-C reverse orientation** now runs at SuperSpeed (ps883x patch 0090, on by default).
+- **Native ARM64** (a Raspberry Pi 5 with 8 GB, an ARM laptop or VM): runs as is. Use an
+  SSD for `WORKDIR`, not an SD card; it needs about 30 GB.
+- **x86_64**: register ARM64 emulation once with
+  `docker run --privileged --rm tonistiigi/binfmt --install arm64`, then run the script.
+  It works, several times slower.
 
-### Known
-
-- VRR: no chip-rail power change measured; battery-gauge power is not measurable yet.
-- PSR blanks the panel, so it stays off.
-
-## Roadmap
-
-- **IR camera and face unlock:** working (lock screen and `sudo` verified). Still to do: stop
-  libcamera/PipeWire from grabbing the IR camera (package update in progress), check
-  recognition in daylight and darkness, the bridge delivering 18 of the sensor's 36 fps, and
-  Windows' runtime gain (not decoded).
-- **Awake power:** re-run the Windows comparison with the latest fixes.
-- **USB-C runtime power management** (wake-on-plug issue) and **hibernation**.
-- **Runtime power tuning** with a per-rail power meter.
-- **Rebase on Linux 7.3** when it is released, dropping the patches that land in it.
-- **USB4** once a host-router driver is posted upstream.
-
-## Repository
-
-Packages are published as assets of the rolling GitHub Release `repo-aarch64`:
-
-```
-[omarchy-sl7]
-SigLevel = Required DatabaseOptional
-Server = https://github.com/qBitnaut/omarchy-dragon-sl7/releases/download/repo-aarch64
-```
-
-- `.github/workflows/publish-repo.yml` runs after linux-sl7, iptsd-sl7, omarchy-surface-sl7,
-  omarchy-sl7-keyring, howdy-next, sl7-ir-bridge, omarchy-sl7-faceunlock and omarchy-sl7-battery succeed on main (and on manual dispatch). It takes their latest artifacts
-  plus the packages already on the release, refuses firmware files, signs every package
-  (`gpg --detach-sign`), runs `repo-add --sign`, keeps the current and previous version of each
-  package, and replaces the assets. Concurrent runs queue.
-- Releases cannot hold symlinks, so `omarchy-sl7.db` and `omarchy-sl7.files` are real copies of
-  the `.tar.gz` files, each with a `.sig`. `omarchy-sl7.pub.asc` is the public key.
-- pacman follows GitHub's redirect from `github.com/.../releases/download/...` to its object
-  storage (libcurl follows redirects; the same scheme serves other Arch repositories).
-- Signing uses the repository secrets `REPO_SIGNING_KEY` (ASCII-armored private key, no
-  passphrase) and `REPO_SIGNING_KEY_ID`. Without them the workflow still runs and warns that
-  the repository is unsigned. The key must match `pkgs/omarchy-sl7-keyring`; rotate with
-  `tools/repo/make-keyring-files.sh`.
-- Immutable releases must stay disabled for this repository.
-- Signing runs in a pinned, network-less container in a job of the protected `release`
-  environment (main only). To verify what you download, check the signing key's fingerprint
-  (`6387C619EF246F6F20C536B72C3331C78353BA04`); see [SECURITY.md](SECURITY.md) for the trust
-  model and how to report a problem.
-
-## Firmware and licensing
-
-Microsoft and Qualcomm firmware is never committed to or distributed from this
-repository. It is fetched on the target machine from Microsoft's public
-Surface Laptop 7 driver MSI. The .gitignore blocks firmware and captures.
+The ISO lands in `WORKDIR/out/`.
 
 ## License
 
-- Scripts and packaging are MIT licensed (see LICENSE).
-- Kernel patches under pkgs/linux-sl7/patches are GPL-2.0, like the Linux kernel they modify.
-- iptsd-sl7 (the iptsd fork) is GPL-2.0-or-later; howdy-next is GPL-3.0-or-later.
-- Microsoft/Qualcomm firmware is never included and remains under its own license.
-- The Omarchy logo is Omarchy's, under the MIT license.
-
-## Support
-
-If this port makes your Surface Laptop 7 better, consider buying me a coffee. It helps
-keep the kernel rebases, testing and updates coming.
-
-<a href="https://buymeacoffee.com/qBitnaut" target="_blank"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me A Coffee" height="60" width="217"></a>
-
-## Credits
-
-Built on the work of the community:
-
-- **Omarchy** (omacom/omarchy, omarchy-iso, omarchy-pkgs) and its dragon branches.
-- **Surface Laptop 7 ports:** denislopt/omarchy-surface-laptop7, bryce-hoehn/linux-surface-laptop-7
-  (touchpad calibration by Oliver White), ProgrammerIn-wonderland/ELLX-Kernel,
-  ItsLucas/surface-laptop-7-ubuntu-kernel, dwhinham/linux-sp11, and linux-surface.
-- **alex-lentz/iptsd:** the iptsd fork with Surface Laptop 7 touchpad support.
-- **valeronm/sl7-mac:** factory Wi-Fi and Bluetooth addresses.
-- **nathawat/howdy-next:** face authentication; the AUR package it builds on.
-- **nate8199/omarchy-plugin-howdy-face:** the lock screen overlay we patch.
-- **v4l2loopback:** the virtual camera device behind `sl7-ir-bridge`.
-- **petm5/vd55g** (and ST's GPL firmware arrays): the VD55G0 IR sensor driver.
-- **scuggo** (and Nikkuss): the msm variable refresh patch and QSPI work.
-- **Kernel patch authors** credited in each patch: Maulik Shah, Ulf Hansson, Abel Vesa,
-  Manivannan Sadhasivam, Bryan O'Donoghue, Jens Glathe, Liviu Nicoara, Jiajie Chen
-  and rafaelguariento, among others.
+MIT for this repository's own files (see `LICENSE`; portions copyright qBitnaut). The
+packages it downloads keep their own licenses: `linux-sp11` is GPL-2.0, iptsd is
+GPL-2.0-or-later, and Dale Whinham's packaging is in
+[dwhinham/archlinux-repo](https://github.com/dwhinham/archlinux-repo). No Microsoft or
+Qualcomm firmware is included anywhere in this repository or its ISO.
