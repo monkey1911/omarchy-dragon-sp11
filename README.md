@@ -124,7 +124,8 @@ Omarchy's installer can install beside Windows instead of wiping it:
 4. Choose the system at power-on from the Surface UEFI menu (hold Volume Up, *Boot
    configuration*).
 
-Windows also stays available to read firmware from later (`omarchy-sp11-firmware --windows`).
+A dual boot also keeps the firmware source at hand: `sudo qcom-firmware-extract --install`
+re-reads it from the (decrypted) Windows partition at any time.
 
 ## After the first boot
 
