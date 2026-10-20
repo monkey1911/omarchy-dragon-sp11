@@ -54,7 +54,8 @@ Surface Pro 11 device tree. The stock `linux-aarch64` kernel stays installed as 
 
 ## Before you install
 
-> **Installing wipes the internal SSD, including Windows.** Do these first:
+> **A full-disk install wipes the internal SSD, including Windows.** To keep Windows, use the
+> installer's *Free space install* (see [Dual boot](#dual-boot)). Either way, do these first:
 
 - [ ] Back up everything you want to keep.
 - [ ] Install all Windows and Surface firmware updates. Surface firmware only updates from
@@ -106,8 +107,24 @@ which are precise for a reason:
 4. Run the Omarchy installer. Its log should show `hardware profile: Microsoft Surface Pro 11`.
    If it doesn't, stop: the Surface Pro 11 packages would not be installed. Check
    `cat /sys/class/dmi/id/product_name` and report it.
-5. Pick the internal NVMe and set the disk encryption passphrase. The Flex Keyboard works
+5. Pick the internal NVMe, choose *Full disk install* or *Free space install*, and set the
+   disk encryption passphrase. The Flex Keyboard works
    at the unlock prompt if it is attached (the modules are in the initramfs; untested).
+
+## Dual boot
+
+Omarchy's installer can install beside Windows instead of wiping it:
+
+1. In Windows, turn BitLocker off and let it finish decrypting. The installer refuses a
+   disk with BitLocker on; suspending it is not enough.
+2. Shrink the Windows partition in Disk Management (or `diskmgmt.msc`) and leave the space
+   **unallocated**. Omarchy needs at least 32 GB, plus 2 GB for its own EFI partition.
+3. In the installer, pick *Free space install (alongside existing data)*. It creates its own
+   EFI partition and leaves the Windows one untouched.
+4. Choose the system at power-on from the Surface UEFI menu (hold Volume Up, *Boot
+   configuration*).
+
+Windows also stays available to read firmware from later (`omarchy-sp11-firmware --windows`).
 
 ## After the first boot
 
