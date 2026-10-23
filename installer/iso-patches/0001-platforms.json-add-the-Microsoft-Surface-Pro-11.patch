@@ -9,14 +9,14 @@ systemd's hardware-ID table for x1e80100-microsoft-denali, HardwareID-9) and the
 the stock linux-aarch64 rescue kernel; the packages come from the local
 [omarchy-sp11] repository, linux-firmware-qcom from ALARM.
 ---
- configs/aarch64/platforms.json | 23 +++++++++++++++++++++++
- 1 file changed, 23 insertions(+)
+ configs/aarch64/platforms.json | 24 ++++++++++++++++++++++++
+ 1 file changed, 24 insertions(+)
 
 diff --git a/configs/aarch64/platforms.json b/configs/aarch64/platforms.json
-index 0c903a5..b9a5919 100644
+index 0c903a5..5555cb9 100644
 --- a/configs/aarch64/platforms.json
 +++ b/configs/aarch64/platforms.json
-@@ -11,6 +11,29 @@
+@@ -11,6 +11,30 @@
        "packages": ["linux-firmware-qcom"],
        "kernel_cmdline": []
      },
@@ -30,6 +30,7 @@ index 0c903a5..b9a5919 100644
 +      ],
 +      "packages": [
 +        "linux-sp11",
++        "linux-sp11-headers",
 +        "linux-sp11-dtbs",
 +        "dwhinham-keyring",
 +        "omarchy-surface-sp11",

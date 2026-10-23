@@ -63,8 +63,8 @@ Surface Pro 11 device tree. The stock `linux-aarch64` kernel stays installed as 
 - [ ] **Turn off BitLocker / Device encryption** (Settings > Privacy & security > Device
       encryption, or `manage-bde -off C:` as administrator) and wait for decryption to
       finish. The installer copies the GPU and DSP firmware from Windows just before it
-      wipes the disk, and it cannot read an encrypted partition. If you skip this, use
-      `sudo omarchy-sp11-firmware` after installing (needs Wi-Fi).
+      touches the disk, and it cannot read an encrypted partition. If you skip this, use
+      `sudo omarchy-sp11-firmware --download` after installing (needs Wi-Fi).
 - [ ] Write down the Wi-Fi and Bluetooth MAC addresses (`getmac /v` and the Bluetooth
       adapter's properties in Device Manager, or `ipconfig /all`). Linux cannot read
       them, and Bluetooth does not work without them.
@@ -124,14 +124,17 @@ Omarchy's installer can install beside Windows instead of wiping it:
 4. Choose the system at power-on from the Surface UEFI menu (hold Volume Up, *Boot
    configuration*).
 
-A dual boot also keeps the firmware source at hand: `sudo qcom-firmware-extract --install`
-re-reads it from the (decrypted) Windows partition at any time.
+A dual boot also keeps the firmware source at hand: `sudo omarchy-sp11-firmware` re-reads
+it from the (decrypted) Windows partition at any time.
 
 ## After the first boot
 
-- **Firmware.** If the installer could not copy it from Windows, connect to Wi-Fi and run
-  `sudo omarchy-sp11-firmware`, then reboot. `omarchy-sp11-firmware --status` lists what is
-  missing.
+- **Firmware.** The installer usually copies only part of it: Omarchy's extractor refuses
+  files when Windows keeps several driver versions, which an updated Windows always does
+  (the install log shows `refusing ambiguous ...`). Run `sudo omarchy-sp11-firmware`, which
+  takes the newest driver package from the Windows partition (dual boot), or
+  `sudo omarchy-sp11-firmware --download` over Wi-Fi after a full-disk install. Then
+  reboot. `omarchy-sp11-firmware --status` lists what is still missing.
 - **MAC addresses.** Put them in `/etc/sp11-mac.conf` (`WIFI_MAC=` and `BT_MAC=`) and
   reboot.
 - **Updates.** `omarchy update` updates `linux-sp11` from the `[dwhinham]` repository.
