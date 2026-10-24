@@ -3,35 +3,40 @@
 # rebuild the boot image.
 #
 # The firmware is Microsoft/Qualcomm licensed and is never shipped in a
-# package. Omarchy's installer copies it from Windows before the disk is
-# wiped (qcom-firmware-extract), but that cannot read a BitLocker-encrypted
-# Windows partition. This is the fallback.
+# package. Omarchy's installer copies what it can from Windows before the
+# disk is touched (qcom-firmware-extract), but it refuses a file when the
+# Windows driver store holds several different versions of it, which a
+# Windows that has installed driver updates always does. This is the fallback.
 #
-#   omarchy-sp11-firmware [--download | --windows | --from DIR | --status]
-#     --download   (default) fetch Microsoft's Surface Pro 11 driver packages
-#                  from the WOA-Project/Qualcomm-Reference-Drivers repository
-#                  and extract the firmware (sp11-grab-fw, by Dale Whinham)
-#     --windows    extract it from a BitLocker Windows partition still on the
-#                  internal disk (sp11-grab-fw --win; needs dislocker, ntfs-3g)
-#     --from DIR   copy it from a Windows driver store you saved somewhere
+#   omarchy-sp11-firmware [--windows | --from DIR | --download | --status]
+#     --windows    (default) read it from the Windows partition on the
+#                  internal disk (dual boot; BitLocker must be off). Mounted
+#                  read-only; the newest driver package of each kind wins.
+#     --from DIR   the same, from a copy of a Windows driver store
 #                  (Windows/System32/DriverStore/FileRepository, or any folder
-#                  holding the files), using Omarchy's qcom-firmware-extract
+#                  holding the driver package folders)
+#     --download   fetch Microsoft's Surface Pro 11 driver packages from the
+#                  WOA-Project/Qualcomm-Reference-Drivers repository and
+#                  extract the firmware (sp11-grab-fw, by Dale Whinham;
+#                  needs a network connection)
 #     --status     list the firmware the device tree asks for that is missing
 #
+# Files go to /usr/lib/firmware/updates (ahead of packaged firmware).
 # Afterwards the DSP driver is re-enabled if Omarchy had disabled it for
 # missing firmware, and the initramfs/UKI is rebuilt (limine-mkinitcpio).
 set -euo pipefail
 
 fw_root=${OMARCHY_SP11_FIRMWARE_ROOT:-/usr/lib/firmware}
 nofw_conf=${OMARCHY_SP11_ADSP_NOFW:-/etc/modprobe.d/qualcomm-adsp-nofw.conf}
+store_rel="Windows/System32/DriverStore/FileRepository"
 
 usage() { sed -n '2,/^set -euo/{/^set -euo/d;s/^# \{0,1\}//;p}' "$0"; }
 
-mode=download from_dir=""
+mode=windows from_dir=""
 case ${1:-} in
-  "" | --download) mode=download ;;
-  --windows) mode=windows ;;
+  "" | --windows) mode=windows ;;
   --from) mode=from; from_dir=${2:?--from needs a directory} ;;
+  --download) mode=download ;;
   --status) mode=status ;;
   -h | --help) usage; exit 0 ;;
   *) echo "omarchy-sp11-firmware: unknown option: $1" >&2; usage >&2; exit 2 ;;
@@ -56,10 +61,81 @@ if ((EUID != 0)); then
   exec sudo "$0" "$@"
 fi
 
+# Groups of files that ship in one Windows driver package and must come from
+# the same package version. Each entry: "<windows name>:<path under firmware/>".
+# Same names and destinations as sp11-grab-fw.
+groups=(
+  "qcdxkmsuc8380.mbn:qcom/x1e80100/microsoft/qcdxkmsuc8380.mbn qcvss8380.mbn:qcom/x1e80100/microsoft/Denali/qcvss8380.mbn"
+  "qcadsp8380.mbn:qcom/x1e80100/microsoft/Denali/qcadsp8380.mbn adsp_dtbs.elf:qcom/x1e80100/microsoft/Denali/adsp_dtb.mbn"
+  "qccdsp8380.mbn:qcom/x1e80100/microsoft/Denali/qccdsp8380.mbn cdsp_dtbs.elf:qcom/x1e80100/microsoft/Denali/cdsp_dtb.mbn"
+)
+
+# Copy every group from the newest driver package folder under STORE that
+# holds its first file (by that file's modification time).
+install_from_store() { # store
+  local store=$1 group entry first dir src name dest n=0
+  for group in "${groups[@]}"; do
+    first=${group%% *}
+    first=${first%%:*}
+    dir=$(find "$store" -type f -iname "$first" -printf '%T@ %h\n' 2>/dev/null |
+      sort -nr | awk 'NR == 1 { $1 = ""; sub(/^ /, ""); print }')
+    if [[ -z $dir ]]; then
+      echo "omarchy-sp11-firmware: $first not found under $store" >&2
+      continue
+    fi
+    echo "omarchy-sp11-firmware: using ${dir#"$store"/}"
+    for entry in $group; do
+      name=${entry%%:*}
+      dest=$fw_root/updates/${entry#*:}
+      src=$(find "$dir" -maxdepth 1 -type f -iname "$name" -print -quit)
+      if [[ -z $src ]]; then
+        echo "omarchy-sp11-firmware: $name is not in that package; skipped" >&2
+        continue
+      fi
+      install -Dm644 "$src" "$dest"
+      echo "  $name -> ${dest#"$fw_root"/}"
+      n=$((n + 1))
+    done
+  done
+  ((n > 0)) || { echo "omarchy-sp11-firmware: no firmware found" >&2; return 1; }
+  echo "omarchy-sp11-firmware: installed $n firmware file(s)"
+}
+
+# Find the Windows partition on an internal disk, mount it read-only and
+# install from its driver store.
+install_from_windows() {
+  local dev fstype tran mnt found=""
+  mnt=$(mktemp -d /run/omarchy-sp11-firmware.XXXXXX)
+  # shellcheck disable=SC2064
+  trap "umount '$mnt' 2>/dev/null; rmdir '$mnt' 2>/dev/null" EXIT
+  while read -r dev fstype; do
+    [[ -n $dev ]] || continue
+    tran=$(lsblk -sndo TRAN "$dev" 2>/dev/null | tail -n 1)
+    [[ $tran == usb ]] && continue
+    case $fstype in
+      BitLocker)
+        echo "omarchy-sp11-firmware: $dev is BitLocker-encrypted; turn BitLocker off in Windows, or use --download" >&2
+        continue ;;
+      ntfs) ;;
+      *) continue ;;
+    esac
+    mount -t ntfs3 -o ro "$dev" "$mnt" 2>/dev/null ||
+      mount -t ntfs-3g -o ro "$dev" "$mnt" 2>/dev/null || continue
+    if [[ -d $mnt/$store_rel ]]; then
+      echo "omarchy-sp11-firmware: Windows driver store found on $dev"
+      found=$dev
+      install_from_store "$mnt/$store_rel" || true
+    fi
+    umount "$mnt"
+    [[ -n $found ]] && break
+  done < <(lsblk -lnpo NAME,FSTYPE)
+  [[ -n $found ]] || { echo "omarchy-sp11-firmware: no readable Windows partition found; try --download" >&2; return 1; }
+}
+
 case $mode in
+  windows) install_from_windows ;;
+  from) install_from_store "$from_dir" ;;
   download) sp11-grab-fw --download ;;
-  windows) sp11-grab-fw --win ;;
-  from) qcom-firmware-extract --install --no-rebuild -d "$from_dir" ;;
 esac
 
 # ADSP firmware present again: let the DSP driver load. Omarchy's

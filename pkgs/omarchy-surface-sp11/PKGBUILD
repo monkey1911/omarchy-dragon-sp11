@@ -11,7 +11,7 @@
 
 pkgname=omarchy-surface-sp11
 pkgver=0.1.0
-pkgrel=1
+pkgrel=2
 pkgdesc='Omarchy add-on for the Microsoft Surface Pro 11 (Snapdragon X): initramfs, UKI device trees, kernel repository, firmware helper'
 arch=('any')
 url='https://github.com/monkey1911/omarchy-dragon-sp11'

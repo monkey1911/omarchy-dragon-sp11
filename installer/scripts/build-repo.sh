@@ -19,7 +19,7 @@ prebuilt="${SP11_PREBUILT:-/prebuilt}"
 src="${SP11_SOURCES:-/src}"
 repo="${SP11_REPO:-/repo}"
 work=/build
-expected=(linux-sp11 linux-sp11-dtbs dwhinham-keyring sp11-ath12k-board sp11-audioreach-topology
+expected=(linux-sp11 linux-sp11-headers linux-sp11-dtbs dwhinham-keyring sp11-ath12k-board sp11-audioreach-topology
 	alsa-ucm-conf-sp11 sp11-grab-fw sp11-mac-fixup iptsd-sp11 omarchy-surface-sp11
 	qcom-firmware-extract linux-aarch64-pkgbase-shim archinstall)
 

@@ -22,6 +22,7 @@ done
 
 packages=(
 	linux-sp11
+	linux-sp11-headers
 	linux-sp11-dtbs
 	dwhinham-keyring
 	sp11-ath12k-board
