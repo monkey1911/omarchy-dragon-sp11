@@ -2,6 +2,9 @@
 
 **Omarchy for the Microsoft Surface Pro 11 (Snapdragon X)**
 
+With the addition of SP11 support in the 4.5 edge channel, I am archiving this repo in favor on moving over to main.
+
+
 > Unofficial personal port. Not affiliated with or endorsed by Omarchy/Basecamp,
 > Microsoft or Qualcomm, and not part of the Surface Pro 11 archiso project it builds on.
 
